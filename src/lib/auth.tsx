@@ -44,14 +44,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const unsub = onAuthStateChanged(auth, async (nextUser) => {
       if (!mounted) return;
-      setUser(nextUser);
       if (nextUser) {
+        setLoading(true);
+        setUser(nextUser);
         const p = await loadProfile(nextUser);
         if (mounted) {
           setProfile(p);
           setLoading(false);
         }
       } else {
+        setUser(null);
         setProfile(null);
         setLoading(false);
       }
