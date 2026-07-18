@@ -1,0 +1,169 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function myProfile() {
+      return get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/profiles/$(request.auth.uid))
+        && myProfile().role == 'admin'
+        && myProfile().status == 'active';
+    }
+
+    function isSelf(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function setupComplete() {
+      return exists(/databases/$(database)/documents/meta/app)
+        && get(/databases/$(database)/documents/meta/app).data.setupComplete == true;
+    }
+
+    function bootstrapAdminCreate() {
+      return signedIn()
+        && !setupComplete()
+        && request.resource.data.role == 'admin';
+    }
+
+    function hasInviteForSelf() {
+      return signedIn()
+        && request.auth.token.email != null
+        && exists(/databases/$(database)/documents/user_invites/$(request.auth.token.email))
+        && request.resource.data.role
+          == get(/databases/$(database)/documents/user_invites/$(request.auth.token.email)).data.role;
+    }
+
+    function duringBootstrap() {
+      return signedIn() && !setupComplete();
+    }
+
+    match /meta/{docId} {
+      allow read: if true;
+      allow create: if signedIn() && docId == 'app' && request.resource.data.setupComplete == true;
+      allow update: if signedIn()
+        && docId == 'app'
+        && resource.data.setupComplete == false
+        && request.resource.data.setupComplete == true;
+    }
+
+    match /user_invites/{email} {
+      allow read: if signedIn() && (isAdmin() || request.auth.token.email == email);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /profiles/{userId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.auth.uid == userId && (
+        bootstrapAdminCreate() || hasInviteForSelf()
+      );
+      allow update: if isAdmin() || (
+        isSelf(userId)
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.must_reset_password == resource.data.must_reset_password
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /projects/{projectId} {
+      allow read: if signedIn();
+      allow create: if isAdmin() && request.resource.data.created_by == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    match /project_members/{memberId} {
+      allow read: if signedIn();
+      allow create, delete: if isAdmin();
+    }
+
+    match /tasks/{taskId} {
+      allow read: if signedIn();
+      allow create: if isAdmin() && request.resource.data.created_by == request.auth.uid;
+      allow update: if isAdmin() || (
+        signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'progress', 'position', 'updated_at'])
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /comments/{commentId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.user_id == request.auth.uid;
+      allow delete: if isAdmin() || (signedIn() && resource.data.user_id == request.auth.uid);
+    }
+
+    match /time_logs/{logId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.user_id == request.auth.uid);
+      allow create: if signedIn() && request.resource.data.user_id == request.auth.uid;
+      allow update: if isAdmin() || (signedIn() && resource.data.user_id == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    match /events/{eventId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.owner_id == request.auth.uid
+        && (request.resource.data.type == 'personal' || isAdmin());
+      allow update, delete: if (
+        resource.data.type == 'company' && isAdmin()
+      ) || (
+        resource.data.type == 'personal' && resource.data.owner_id == request.auth.uid
+      );
+    }
+
+    match /sticky_notes/{noteId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.author_id == request.auth.uid;
+      allow update, delete: if isAdmin() || (signedIn() && resource.data.author_id == request.auth.uid);
+    }
+
+    match /settings/{key} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin() || duringBootstrap();
+    }
+
+    match /app_categories/{pattern} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin() || duringBootstrap();
+    }
+
+    match /agent_devices/{deviceId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.user_id == request.auth.uid);
+      allow create: if signedIn() && request.resource.data.user_id == request.auth.uid;
+      allow update: if isAdmin() || (signedIn() && resource.data.user_id == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    match /app_usage/{usageId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.user_id == request.auth.uid);
+      allow create: if signedIn() && request.resource.data.user_id == request.auth.uid;
+      allow update: if isAdmin() || (signedIn() && resource.data.user_id == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    match /sessions_activity/{activityId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.user_id == request.auth.uid);
+      allow create, update: if signedIn() && request.resource.data.user_id == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    match /activity_logs/{logId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.user_id == request.auth.uid);
+      allow create: if signedIn() && request.resource.data.user_id == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    match /presence/{userId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isSelf(userId);
+    }
+  }
+}
