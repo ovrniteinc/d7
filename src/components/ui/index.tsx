@@ -1,4 +1,5 @@
 import type { HTMLAttributes, ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { SHADES } from "../../lib/constants";
 import type { ShadeKey } from "../../lib/types";
 
@@ -120,9 +121,9 @@ export function Avatar({ name, url, size = 32 }: { name: string; url?: string | 
 
 export function Modal({ open, onClose, children, title, wide }: { open: boolean; onClose: () => void; children: ReactNode; title?: string; wide?: boolean }) {
   if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 modal-overlay" />
       <div
         className={`glass-strong relative z-10 w-full ${wide ? "max-w-2xl" : "max-w-md"} max-h-[90vh] overflow-y-auto p-6`}
         onClick={(e) => e.stopPropagation()}
@@ -130,7 +131,8 @@ export function Modal({ open, onClose, children, title, wide }: { open: boolean;
         {title && <h2 className="text-lg font-semibold text-white mb-5">{title}</h2>}
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

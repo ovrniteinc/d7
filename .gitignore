@@ -21,3 +21,6 @@ dist-ssr
 *.sln
 *.sw?
 .env
+.firebase-service-account-oneline.txt
+agent/.d7-device-id
+agent/node_modules

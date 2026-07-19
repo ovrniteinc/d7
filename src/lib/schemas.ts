@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+const documentId = z.string().min(1, "Required");
+const nullableDocumentId = z.string().min(1).nullable();
+
 export const loginSchema = z.object({
   email: z.string().email("Enter a valid email"),
   password: z.string().min(1, "Password required"),
@@ -23,8 +26,8 @@ export const projectSchema = z.object({
 export const taskSchema = z.object({
   title: z.string().min(2, "Title too short").max(140, "Title too long"),
   description: z.string().max(2000).optional().default(""),
-  project_id: z.string().uuid(),
-  assignee_id: z.string().uuid().nullable(),
+  project_id: documentId,
+  assignee_id: nullableDocumentId,
   priority: z.enum(["low", "medium", "high", "urgent"]),
   status: z.enum(["backlog", "todo", "in_progress", "review", "done"]),
   due_date: z.string().nullable(),
@@ -36,7 +39,7 @@ export const eventSchema = z.object({
   start_at: z.string(),
   end_at: z.string(),
   type: z.enum(["company", "personal"]),
-  project_id: z.string().uuid().nullable(),
+  project_id: nullableDocumentId,
 });
 
 export const userSchema = z.object({

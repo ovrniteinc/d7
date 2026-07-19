@@ -34,6 +34,7 @@ export const COL = {
   appUsage: "app_usage",
   sessionsActivity: "sessions_activity",
   activityLogs: "activity_logs",
+  notifications: "notifications",
   presence: "presence",
   meta: "meta",
   userInvites: "user_invites",

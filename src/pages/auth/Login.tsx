@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../../lib/firebase";
 import { loginSchema } from "../../lib/schemas";
+import { formatAuthError } from "../../lib/auth-errors";
 
 export default function Login() {
   const nav = useNavigate();
@@ -24,7 +25,7 @@ export default function Login() {
       toast.success("Signed in");
       nav("/");
     } catch (error) {
-      toast.error((error as Error).message);
+      toast.error(formatAuthError(error, "login"));
     } finally {
       setLoading(false);
     }

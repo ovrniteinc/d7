@@ -90,20 +90,26 @@ function GeneralSettings() {
 
 function KanbanSettings() {
   const qc = useQueryClient();
-  const [columns, setColumns] = useState<KanbanColumn[]>(DEFAULT_KANBAN_COLUMNS);
+  const { data: savedColumns, isPending } = useQuery<KanbanColumn[]>({
+    queryKey: ["settings", "kanban_columns"],
+    queryFn: async () => {
+      const data = await getDocById<Setting>(COL.settings, "kanban_columns");
+      return (data?.value as KanbanColumn[]) || DEFAULT_KANBAN_COLUMNS;
+    },
+  });
+  const [columns, setColumns] = useState<KanbanColumn[] | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    getDocById<Setting>(COL.settings, "kanban_columns").then((data) => {
-      if (data) setColumns(data.value || DEFAULT_KANBAN_COLUMNS);
-    });
-  }, []);
+    if (savedColumns) setColumns(savedColumns);
+  }, [savedColumns]);
 
   const save = async () => {
+    if (!columns) return;
     setSaving(true);
     try {
       await upsertDoc(COL.settings, "kanban_columns", { key: "kanban_columns", value: columns });
-      qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.setQueryData(["settings", "kanban_columns"], columns);
       toast.success("Kanban saved");
     } catch (e) {
       toast.error((e as Error).message);
@@ -112,16 +118,29 @@ function KanbanSettings() {
     }
   };
 
-  const add = () => setColumns([...columns, { id: `col_${Date.now()}`, title: "New Column" }]);
-  const remove = (id: string) => setColumns(columns.filter((c) => c.id !== id));
+  const add = () => setColumns((prev) => [...(prev || []), { id: `col_${Date.now()}`, title: "New Column" }]);
+  const remove = (id: string) => setColumns((prev) => (prev || []).filter((c) => c.id !== id));
   const move = (i: number, dir: -1 | 1) => {
-    const ni = i + dir;
-    if (ni < 0 || ni >= columns.length) return;
-    const copy = [...columns];
-    [copy[i], copy[ni]] = [copy[ni], copy[i]];
-    setColumns(copy);
+    setColumns((prev) => {
+      const list = [...(prev || [])];
+      const ni = i + dir;
+      if (ni < 0 || ni >= list.length) return prev;
+      [list[i], list[ni]] = [list[ni], list[i]];
+      return list;
+    });
   };
-  const update = (id: string, title: string) => setColumns(columns.map((c) => c.id === id ? { ...c, title } : c));
+  const update = (id: string, title: string) => {
+    setColumns((prev) => (prev || []).map((c) => (c.id === id ? { ...c, title } : c)));
+  };
+
+  if (isPending || !columns) {
+    return (
+      <GlassPanel className="p-6 space-y-4">
+        <SectionLabel>Kanban columns</SectionLabel>
+        <p className="text-sm text-white/40">Loading columns…</p>
+      </GlassPanel>
+    );
+  }
 
   return (
     <GlassPanel className="p-6 space-y-4">
@@ -225,8 +244,21 @@ function DeviceSettings() {
   };
 
   return (
-    <GlassPanel className="p-6 space-y-4">
-      <SectionLabel>Agent devices</SectionLabel>
+    <div className="space-y-4">
+      <GlassPanel className="p-6 space-y-4">
+        <SectionLabel>Browser tracking</SectionLabel>
+        <div className="space-y-3 text-sm text-white/60 leading-relaxed">
+          <p>
+            When someone starts <strong className="text-white/85">Work Tracker</strong>, District 7 automatically logs browser activity (page title and tab focus) into app usage. No separate app, install step, or extra login is required — it uses the same signed-in session as the web app.
+          </p>
+          <p className="text-white/40 text-xs">
+            Tracking stops when the Work Tracker timer stops. Other desktop apps (e.g. Cursor, Slack) are not recorded from the browser; only activity in the browser during an active session.
+          </p>
+        </div>
+      </GlassPanel>
+
+      <GlassPanel className="p-6 space-y-4">
+        <SectionLabel>Registered devices</SectionLabel>
       {devices?.length ? (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -257,9 +289,10 @@ function DeviceSettings() {
           </table>
         </div>
       ) : (
-        <EmptyState title="No devices registered" hint="Install the desktop agent to register a device." icon={<MonitorSmartphone size={28} />} />
+        <EmptyState title="No devices registered" hint="Devices appear when users start Work Tracker in the browser." icon={<MonitorSmartphone size={28} />} />
       )}
-    </GlassPanel>
+      </GlassPanel>
+    </div>
   );
 }
 
@@ -270,7 +303,7 @@ function ComplianceSection() {
       <div className="space-y-3 text-sm text-white/60 leading-relaxed">
         <p>District 7 uses <strong className="text-white/85">consent-based, transparent monitoring</strong>. The web application tracks in-browser focus and idle states only — it does not record keystrokes, screen content, or browsing history.</p>
         <p>The Work Tracker records time entries when a user manually starts a session. Idle detection is based on 5 minutes of no input or the browser tab being hidden. No data is collected without an active session.</p>
-        <p>A future optional desktop agent may sync application usage (app name, window title, and duration) to classify activity as <em>work</em>, <em>neutral</em>, or <em>distraction</em>. The desktop agent requires explicit user consent and will be disclosed in this panel before activation.</p>
+        <p>The optional desktop agent in <code className="text-white/70">agent/</code> can sync full desktop app usage for advanced setups. By default, browser activity is recorded automatically while Work Tracker is running — no separate install or credentials required.</p>
         <p className="text-white/40 text-xs">This workspace is designed to comply with UK-GDPR and Saudi PDPL principles: lawful basis, transparency, data minimisation, and purpose limitation. Users can view their own data in Profile and Productivity. Contact your administrator for data export or deletion requests.</p>
       </div>
     </GlassPanel>

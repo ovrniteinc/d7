@@ -7,6 +7,7 @@ import { useAuth } from "../lib/auth";
 import { GlassPanel, Modal, Avatar, EmptyState, SectionLabel, StatusDot } from "../components/ui";
 import { fmtDate } from "../lib/format";
 import { createTeamUser, updateUserRole, logActivity } from "../lib/functions";
+import { sendUserInviteEmail } from "../lib/user-invite-email";
 import { userSchema } from "../lib/schemas";
 import type { Profile, Role, UserStatus } from "../lib/types";
 
@@ -15,7 +16,12 @@ export default function UserManagement() {
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editUser, setEditUser] = useState<Profile | null>(null);
-  const [createdCreds, setCreatedCreds] = useState<{ email: string; password: string; needsConsoleAuth?: boolean } | null>(null);
+  const [createdCreds, setCreatedCreds] = useState<{
+    email: string;
+    password: string;
+    inviteSent?: boolean;
+    needsConsoleAuth?: boolean;
+  } | null>(null);
 
   const { data: users } = useQuery<Profile[]>({
     queryKey: ["profiles"],
@@ -119,8 +125,8 @@ function UserDialog({ open, onClose, editUser, onCreated, createdCreds, onResetP
   open: boolean;
   onClose: () => void;
   editUser: Profile | null;
-  onCreated: (creds: { email: string; password: string; needsConsoleAuth?: boolean }) => void;
-  createdCreds: { email: string; password: string; needsConsoleAuth?: boolean } | null;
+  onCreated: (creds: { email: string; password: string; inviteSent?: boolean; needsConsoleAuth?: boolean }) => void;
+  createdCreds: { email: string; password: string; inviteSent?: boolean; needsConsoleAuth?: boolean } | null;
   onResetPassword: (u: Profile) => void;
 }) {
   const qc = useQueryClient();
@@ -186,7 +192,26 @@ function UserDialog({ open, onClose, editUser, onCreated, createdCreds, onResetP
       try {
         const result = await createTeamUser({ name, title, email, role, password });
         qc.invalidateQueries({ queryKey: ["profiles"] });
-        onCreated({ email: result.email, password: result.password, needsConsoleAuth: result.needsConsoleAuth });
+
+        let inviteSent = false;
+        try {
+          await sendUserInviteEmail({
+            email: result.email,
+            name: result.name,
+            tempPassword: result.password,
+          });
+          inviteSent = true;
+        } catch (inviteError) {
+          console.warn("Invite email failed", inviteError);
+          toast.error((inviteError as Error).message);
+        }
+
+        onCreated({
+          email: result.email,
+          password: result.password,
+          inviteSent,
+          needsConsoleAuth: result.needsConsoleAuth,
+        });
         setName(""); setTitle(""); setEmail(""); setRole("staff"); setPassword("");
       } catch (e) {
         toast.error((e as Error).message);
@@ -201,8 +226,17 @@ function UserDialog({ open, onClose, editUser, onCreated, createdCreds, onResetP
       {createdCreds ? (
         <div className="space-y-4">
           <p className="text-sm text-white/70">
-            Invite saved. Complete these steps so the user can sign in (free Spark plan — no Cloud Functions needed).
+            {createdCreds.inviteSent
+              ? `Invite email sent to ${createdCreds.email}. They can sign in with the temporary password below and will be asked to set a new one.`
+              : createdCreds.needsConsoleAuth
+                ? "Invite saved. Complete these steps so the user can sign in."
+                : "User created. Share these login details with them (invite email could not be sent)."}
           </p>
+          {createdCreds.inviteSent && (
+            <p className="text-white/45 text-xs">
+              You can still copy the credentials below if they need a backup.
+            </p>
+          )}
           {createdCreds.needsConsoleAuth && (
             <div className="glass p-4 rounded-xl space-y-2 text-sm text-white/75">
               <p className="font-medium text-white/90">1. Add the Auth account in Firebase Console</p>
@@ -214,6 +248,11 @@ function UserDialog({ open, onClose, editUser, onCreated, createdCreds, onResetP
                 On first login their profile is created automatically from the invite.
               </p>
             </div>
+          )}
+          {!createdCreds.needsConsoleAuth && (
+            <p className="text-white/45 text-xs">
+              They will be asked to set a new password on first login.
+            </p>
           )}
           <div className="glass p-4 rounded-xl space-y-2">
             <div><span className="label">Email</span><p className="text-sm text-white/85 mono">{createdCreds.email}</p></div>

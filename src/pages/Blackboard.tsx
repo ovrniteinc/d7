@@ -135,7 +135,23 @@ export default function Blackboard() {
   };
 
   const onDragEnd = (note: StickyNote, x: number, y: number) => {
-    updateNote.mutate({ id: note.id, patch: { x, y, z: Date.now() } });
+    const nextX = Math.max(0, Math.round(x));
+    const nextY = Math.max(0, Math.round(y));
+    const z = Date.now();
+    const previous = { x: note.x, y: note.y, z: note.z };
+    setNotes((prev) =>
+      prev.map((n) => (n.id === note.id ? { ...n, x: nextX, y: nextY, z } : n)),
+    );
+    updateNote.mutate(
+      { id: note.id, patch: { x: nextX, y: nextY, z } },
+      {
+        onError: () => {
+          setNotes((prev) =>
+            prev.map((n) => (n.id === note.id ? { ...n, ...previous } : n)),
+          );
+        },
+      },
+    );
   };
 
   return (
@@ -183,10 +199,12 @@ export default function Blackboard() {
               key={note.id}
               drag={canEdit && !isEditing}
               dragMomentum={false}
+              dragElastic={0}
               initial={false}
-              style={{ position: "absolute", left: note.x, top: note.y, zIndex: note.z }}
+              animate={{ x: note.x, y: note.y }}
+              style={{ position: "absolute", top: 0, left: 0, zIndex: note.z }}
               onDragEnd={(_, info) => onDragEnd(note, note.x + info.offset.x, note.y + info.offset.y)}
-              className="w-48 p-4 rounded-2xl group"
+              className={`w-48 p-4 rounded-2xl group ${canEdit && !isEditing ? "cursor-grab active:cursor-grabbing" : ""}`}
             >
               <div style={{ background: s.chip, border: `1px solid ${s.ring}`, borderRadius: 16, padding: 16, minHeight: 80, backdropFilter: "blur(8px)" }}>
                 {isEditing ? (
@@ -204,7 +222,7 @@ export default function Blackboard() {
                     placeholder="Type a note…"
                   />
                 ) : (
-                  <p onDoubleClick={() => canEdit && startEdit(note)} className="text-sm text-white/85 whitespace-pre-wrap cursor-text min-h-[40px]">
+                  <p onDoubleClick={() => canEdit && startEdit(note)} className="text-sm text-white/85 whitespace-pre-wrap min-h-[40px]">
                     {note.body || <span className="text-white/30">Double-click to edit</span>}
                   </p>
                 )}

@@ -9,6 +9,7 @@ import { useUIStore } from "../lib/ui-store";
 import { GlassPanel, LiftedTile, StatTile, EmptyState, SectionLabel } from "../components/ui";
 import { fmtClock, fmtHours, fmtRelative } from "../lib/format";
 import { rollupTimeLog } from "../lib/functions";
+import { startSessionUsageTracker, stopSessionUsageTracker } from "../lib/session-usage-tracker";
 import type { TimeLog, Task, Project, Profile } from "../lib/types";
 
 export default function WorkTracker() {
@@ -83,6 +84,7 @@ export default function WorkTracker() {
           const elapsed = Math.floor((Date.now() - new Date(data.started_at).getTime()) / 1000);
           setSeconds(elapsed);
           setFocusSeconds(elapsed);
+          await startSessionUsageTracker(profile.id);
         }
       } catch (e) {
         console.warn("Failed to reconcile active timer", e);
@@ -135,6 +137,7 @@ export default function WorkTracker() {
         source: "timer",
       });
       setActiveLogId(data.id);
+      await startSessionUsageTracker(profile.id);
     } catch (e) {
       toast.error((e as Error).message);
     }
@@ -144,11 +147,14 @@ export default function WorkTracker() {
     if (!activeLogId) { setStatus("idle"); return; }
     const ended = new Date().toISOString();
     try {
+      await stopSessionUsageTracker();
       await patchDoc(COL.timeLogs, activeLogId, {
         ended_at: ended, duration_seconds: focusSeconds,
       });
       rollupTimeLog(activeLogId);
       qc.invalidateQueries({ queryKey: ["time-logs"] });
+      qc.invalidateQueries({ queryKey: ["app-usage"] });
+      qc.invalidateQueries({ queryKey: ["agent-devices"] });
       toast.success(`Logged ${fmtClock(focusSeconds)}`);
     } catch (e) {
       toast.error((e as Error).message);
@@ -208,6 +214,9 @@ export default function WorkTracker() {
           ) : (
             <button onClick={stop} className="btn btn-ghost w-full"><Square size={15} /> Stop & log</button>
           )}
+          <p className="text-[11px] text-white/35 mt-3 leading-relaxed">
+            While the timer runs, browser activity is saved to App usage automatically (same login, no extra setup).
+          </p>
         </LiftedTile>
 
         <div className="grid grid-cols-2 gap-4">

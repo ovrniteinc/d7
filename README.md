@@ -156,6 +156,14 @@ Because Cloud Functions are not used, new users need a **Firebase Auth account**
 
 Dashboard, Projects, Tasks/Kanban, Task Detail Drawer, Calendar, Blackboard, Work Tracker, Productivity, Reports & Logs, Settings, User Management, Profile.
 
+### App usage (automatic with Work Tracker)
+
+**App usage timeline** is filled automatically when a user **starts Work Tracker** in the web app (deployed or local). It logs browser page titles and tab focus using their existing login — no separate agent, `.env` credentials, or manual install.
+
+Tracking **stops when the timer stops**. It does not record other desktop apps (Cursor, Slack, etc.) — only browser activity during an active session.
+
+Optional: the `agent/` folder still supports full desktop app tracking for advanced setups (see [`agent/README.md`](agent/README.md)).
+
 ---
 
 ## Scripts

@@ -21,6 +21,10 @@
     height: 100%;
   }
 
+  html {
+    color-scheme: dark;
+  }
+
   body {
     margin: 0;
     background-color: var(--obsidian);
@@ -167,6 +171,28 @@
   }
   textarea.input { resize: vertical; min-height: 80px; line-height: 1.5; }
 
+  select.input {
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+    padding-right: 36px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.55)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 16px;
+  }
+
+  select.input option,
+  select.input optgroup {
+    background: #141418;
+    color: rgba(255, 255, 255, 0.92);
+  }
+
+  select.input:focus option:checked {
+    background: #2a2a30;
+    color: #fff;
+  }
+
   .label {
     display: block;
     font-size: 11px;
@@ -243,6 +269,12 @@
     transition: background var(--motion);
   }
   .table-row:hover { background: rgba(255,255,255,0.02); }
+
+  .modal-overlay {
+    background: rgba(8, 8, 10, 0.88);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
 }
 
 @layer utilities {

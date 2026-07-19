@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   PointerSensor, useSensor, useSensors, closestCorners,
-  type DragStartEvent, type DragEndEvent,
+  type DragStartEvent, type DragEndEvent, type DragCancelEvent,
 } from "@dnd-kit/core";
 import { Plus } from "lucide-react";
 import { COL, createDoc, getDocById, listDocs, patchDoc } from "../lib/db";
@@ -14,6 +15,7 @@ import { Modal, EmptyState, Avatar, MonoBadge, ShadeStripe } from "../components
 import { STATUS_LABELS, PRIORITY_DOTS, DEFAULT_KANBAN_COLUMNS } from "../lib/constants";
 import { taskSchema } from "../lib/schemas";
 import { logActivity } from "../lib/functions";
+import { notifyTaskAssigned } from "../lib/notifications";
 import { fmtDate } from "../lib/format";
 import type { Task, Project, Profile, TaskStatus, Priority, ShadeKey } from "../lib/types";
 
@@ -23,6 +25,7 @@ export default function Tasks() {
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [pendingMoves, setPendingMoves] = useState<Record<string, Partial<Task>>>({});
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -67,32 +70,79 @@ export default function Tasks() {
 
   const filteredTasks = useMemo(() => {
     let list = tasks || [];
+    for (const [id, patch] of Object.entries(pendingMoves)) {
+      list = list.map((t) => (t.id === id ? { ...t, ...patch } : t));
+    }
     if (projectFilter) list = list.filter((t) => t.project_id === projectFilter);
     if (personFilter && isAdmin) list = list.filter((t) => t.assignee_id === personFilter);
     return list;
-  }, [tasks, projectFilter, personFilter, isAdmin]);
+  }, [tasks, pendingMoves, projectFilter, personFilter, isAdmin]);
+
+  const clearPendingMove = (id: string) => {
+    setPendingMoves((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const applyTaskMove = (id: string, patch: Partial<Task>) => {
+    setPendingMoves((prev) => ({ ...prev, [id]: patch }));
+    qc.setQueryData<Task[]>(["tasks"], (old) =>
+      old?.map((t) => (t.id === id ? { ...t, ...patch } : t)) ?? [],
+    );
+  };
 
   const updateTask = useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: Partial<Task> }) => {
       await patchDoc(COL.tasks, id, patch);
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["tasks"] });
+    onSuccess: (_data, { id }) => {
+      clearPendingMove(id);
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e, { id }) => {
+      clearPendingMove(id);
+      toast.error((e as Error).message);
+    },
   });
+
+  const persistTaskMove = (id: string, patch: Partial<Task>) => {
+    const previous = qc.getQueryData<Task[]>(["tasks"]);
+    flushSync(() => {
+      applyTaskMove(id, patch);
+      setActiveId(null);
+    });
+    updateTask.mutate(
+      { id, patch },
+      {
+        onError: () => {
+          if (previous) qc.setQueryData(["tasks"], previous);
+        },
+      },
+    );
+  };
 
   const onDragStart = (e: DragStartEvent) => {
     setActiveId(e.active.id as string);
   };
 
-  const onDragEnd = async (e: DragEndEvent) => {
+  const onDragCancel = (_e: DragCancelEvent) => {
     setActiveId(null);
+  };
+
+  const onDragEnd = async (e: DragEndEvent) => {
     const { active, over } = e;
-    if (!over) return;
+    if (!over) {
+      setActiveId(null);
+      return;
+    }
     const taskId = active.id as string;
     const task = filteredTasks.find((t) => t.id === taskId);
-    if (!task) return;
+    if (!task) {
+      setActiveId(null);
+      return;
+    }
 
     const overId = over.id as string;
     let newStatus: TaskStatus | null = null;
@@ -105,14 +155,14 @@ export default function Tasks() {
     if (!newStatus || newStatus === task.status) {
       const overTask = filteredTasks.find((t) => t.id === overId);
       const newPos = overTask ? overTask.position : Date.now();
-      updateTask.mutate({ id: taskId, patch: { position: newPos + 0.01 } });
+      persistTaskMove(taskId, { position: newPos + 0.01 });
       return;
     }
 
     const patch: Partial<Task> = { status: newStatus, position: Date.now() };
     if (newStatus === "done") patch.progress = 100;
     else if (newStatus === "in_progress" && task.progress === 0) patch.progress = 10;
-    updateTask.mutate({ id: taskId, patch });
+    persistTaskMove(taskId, patch);
     logActivity("task.move", "task", taskId, { to: newStatus });
   };
 
@@ -131,11 +181,22 @@ export default function Tasks() {
       {!filteredTasks.length && !projectFilter ? (
         <EmptyState title="No tasks yet" hint={isAdmin ? "Create your first task." : "Tasks will appear here once created."} icon={<Plus size={32} />} />
       ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+        <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragCancel={onDragCancel} onDragEnd={onDragEnd}>
           <div className="flex gap-4 overflow-x-auto pb-4 flex-1">
             {columns.map((col) => {
               const colTasks = filteredTasks.filter((t) => t.status === col.id);
-              return <KanbanColumn key={col.id} col={col} tasks={colTasks} projectMap={projectMap} userMap={userMap} commentCounts={commentCounts || {}} onOpen={openTask} />;
+              return (
+                <KanbanColumn
+                  key={col.id}
+                  col={col}
+                  tasks={colTasks}
+                  activeId={activeId}
+                  projectMap={projectMap}
+                  userMap={userMap}
+                  commentCounts={commentCounts || {}}
+                  onOpen={openTask}
+                />
+              );
             })}
           </div>
           <DragOverlay>
@@ -151,9 +212,10 @@ export default function Tasks() {
   );
 }
 
-function KanbanColumn({ col, tasks, projectMap, userMap, commentCounts, onOpen }: {
+function KanbanColumn({ col, tasks, activeId, projectMap, userMap, commentCounts, onOpen }: {
   col: { id: string; title: string };
   tasks: Task[];
+  activeId: string | null;
   projectMap: Record<string, Project>;
   userMap: Record<string, Profile>;
   commentCounts: Record<string, number>;
@@ -171,6 +233,7 @@ function KanbanColumn({ col, tasks, projectMap, userMap, commentCounts, onOpen }
           <TaskCard
             key={t.id}
             task={t}
+            hidden={t.id === activeId}
             project={projectMap[t.project_id]}
             assignee={t.assignee_id ? userMap[t.assignee_id] : null}
             commentCount={commentCounts[t.id] || 0}
@@ -183,15 +246,17 @@ function KanbanColumn({ col, tasks, projectMap, userMap, commentCounts, onOpen }
   );
 }
 
-function TaskCard({ task, project, assignee, commentCount, onClick }: {
+function TaskCard({ task, project, assignee, commentCount, hidden, onClick }: {
   task: Task;
   project?: Project;
   assignee?: Profile | null;
   commentCount: number;
+  hidden?: boolean;
   onClick: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
   const shade = project?.color || "graphite";
+  const invisible = hidden || isDragging;
 
   return (
     <div
@@ -199,7 +264,7 @@ function TaskCard({ task, project, assignee, commentCount, onClick }: {
       {...listeners}
       {...attributes}
       onClick={onClick}
-      className={`glass p-3 cursor-pointer hover:!border-white/20 transition ${isDragging ? "opacity-40" : ""}`}
+      className={`glass p-3 cursor-pointer hover:!border-white/20 transition ${invisible ? "opacity-0" : ""}`}
       style={{ borderRadius: 16 }}
     >
       <div className="flex gap-2.5">
@@ -253,6 +318,15 @@ function TaskDialog({ open, onClose, projects, users }: { open: boolean; onClose
         position: Date.now(), progress: 0,
       });
       logActivity("task.create", "task", data.id, { title });
+      if (assigneeId && assigneeId !== profile.id) {
+        await notifyTaskAssigned({
+          recipientId: assigneeId,
+          actorId: profile.id,
+          actorName: profile.name || profile.email,
+          taskId: data.id,
+          taskTitle: title,
+        }).catch(() => {});
+      }
       qc.invalidateQueries({ queryKey: ["tasks"] });
       toast.success("Task created");
       setTitle(""); setDescription(""); setProjectId(""); setAssigneeId(""); setPriority("medium"); setStatus("backlog"); setDueDate("");

@@ -60,14 +60,24 @@ service cloud.firestore {
 
     match /profiles/{userId} {
       allow read: if signedIn();
-      allow create: if signedIn() && request.auth.uid == userId && (
-        bootstrapAdminCreate() || hasInviteForSelf()
+      allow create: if (
+        signedIn() && request.auth.uid == userId && (
+          bootstrapAdminCreate() || hasInviteForSelf()
+        )
+      ) || (
+        isAdmin()
+        && request.resource.data.status == 'active'
+        && request.resource.data.email is string
+        && request.resource.data.role in ['admin', 'staff']
       );
       allow update: if isAdmin() || (
         isSelf(userId)
         && request.resource.data.role == resource.data.role
         && request.resource.data.status == resource.data.status
-        && request.resource.data.must_reset_password == resource.data.must_reset_password
+        && (
+          request.resource.data.must_reset_password == resource.data.must_reset_password
+          || (resource.data.must_reset_password == true && request.resource.data.must_reset_password == false)
+        )
       );
       allow delete: if isAdmin();
     }
@@ -164,6 +174,33 @@ service cloud.firestore {
     match /presence/{userId} {
       allow read: if signedIn();
       allow create, update, delete: if isSelf(userId);
+    }
+
+    function notificationFieldsUnchanged() {
+      return request.resource.data.user_id == resource.data.user_id
+        && request.resource.data.type == resource.data.type
+        && request.resource.data.title == resource.data.title
+        && request.resource.data.body == resource.data.body
+        && request.resource.data.link == resource.data.link
+        && request.resource.data.entity_type == resource.data.entity_type
+        && request.resource.data.entity_id == resource.data.entity_id
+        && request.resource.data.actor_id == resource.data.actor_id
+        && request.resource.data.created_at == resource.data.created_at;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if signedIn() && resource.data.user_id == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.actor_id == request.auth.uid
+        && request.resource.data.read == false
+        && request.resource.data.user_id is string;
+      allow update: if signedIn()
+        && resource.data.user_id == request.auth.uid
+        && request.resource.data.read == true
+        && notificationFieldsUnchanged();
+      allow delete: if isAdmin() || (
+        signedIn() && resource.data.user_id == request.auth.uid
+      );
     }
   }
 }

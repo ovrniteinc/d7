@@ -10,6 +10,7 @@ import type { Task, Comment, Profile, Project, TimeLog, Priority, TaskStatus } f
 import { Avatar, MonoBadge, StatusDot } from "../ui";
 import { fmtRelative, fmtClock, fmtHours, fmtDate } from "../../lib/format";
 import { logActivity, rollupTimeLog } from "../../lib/functions";
+import { notifyTaskAssigned, notifyTaskComment } from "../../lib/notifications";
 
 export default function TaskDrawer() {
   const { profile, isAdmin } = useAuth();
@@ -146,9 +147,20 @@ export default function TaskDrawer() {
         body: commentBody,
       });
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       qc.invalidateQueries({ queryKey: ["comments", selectedTaskId] });
+      const body = commentBody.trim();
       setCommentBody("");
+      if (task?.assignee_id && profile && task.assignee_id !== profile.id && body) {
+        await notifyTaskComment({
+          recipientId: task.assignee_id,
+          actorId: profile.id,
+          actorName: profile.name || profile.email,
+          taskId: task.id,
+          taskTitle: task.title,
+          preview: body.length > 120 ? `${body.slice(0, 117)}…` : body,
+        }).catch(() => {});
+      }
     },
     onError: (e) => toast.error((e as Error).message),
   });
@@ -193,17 +205,33 @@ export default function TaskDrawer() {
     setTimerLogId(null);
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
+    const previousAssignee = task?.assignee_id || null;
+    const nextAssignee = editAssignee || null;
     updateTask.mutate({
       title: editTitle,
       description: editDesc,
-      assignee_id: editAssignee || null,
+      assignee_id: nextAssignee,
       priority: editPriority,
       due_date: editDue || null,
       status: editStatus,
     });
     setEditMode(false);
     logActivity("task.update", "task", selectedTaskId || undefined);
+    if (
+      profile &&
+      nextAssignee &&
+      nextAssignee !== previousAssignee &&
+      nextAssignee !== profile.id
+    ) {
+      await notifyTaskAssigned({
+        recipientId: nextAssignee,
+        actorId: profile.id,
+        actorName: profile.name || profile.email,
+        taskId: selectedTaskId!,
+        taskTitle: editTitle || task?.title || "Task",
+      }).catch(() => {});
+    }
   };
 
   if (!drawerOpen || !task) return null;

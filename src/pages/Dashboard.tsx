@@ -4,7 +4,7 @@ import { FolderKanban, Users, ListTodo, MonitorSmartphone, Clock, CalendarClock 
 import { COL, listDocs } from "../lib/db";
 import { useAuth } from "../lib/auth";
 import { StatTile, GlassPanel, LiftedTile, SectionLabel, EmptyState, Avatar, StatusDot } from "../components/ui";
-import { fmtRelative, fmtHours, fmtDate } from "../lib/format";
+import { fmtRelative, fmtHours, fmtDate, fmtActivityAction } from "../lib/format";
 import type { Project, Task, Profile, AgentDevice, ActivityLog, SessionActivity, TaskStatus } from "../lib/types";
 
 const STATUS_ORDER: TaskStatus[] = ["backlog", "todo", "in_progress", "review", "done"];
@@ -212,7 +212,7 @@ function AdminDashboard({ projects, users, tasks, devices, activityLogs, allActi
                 return (
                   <div key={l.id} className="flex items-center gap-3 py-1.5 text-sm">
                     <Avatar name={u?.name || "?"} url={u?.avatar_url} size={24} />
-                    <span className="text-white/40 text-xs mono">{l.action}</span>
+                    <span className="text-white/60 text-xs">{fmtActivityAction(l.action, l.meta)}</span>
                     <span className="text-white/30 text-xs ml-auto">{fmtRelative(l.created_at)}</span>
                   </div>
                 );

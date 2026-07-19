@@ -5,6 +5,7 @@ import { useAuth } from "../../lib/auth";
 import { useUIStore } from "../../lib/ui-store";
 import { Avatar } from "../ui";
 import GlobalFilters from "./GlobalFilters";
+import NotificationCenter from "./NotificationCenter";
 
 const TITLES: Record<string, { title: string; sub: string }> = {
   "/": { title: "Dashboard", sub: "Team overview" },
@@ -48,6 +49,8 @@ export default function Topbar({ path }: { path: string }) {
       </div>
 
       <GlobalFilters path={path} />
+
+      <NotificationCenter />
 
       <div className="relative" ref={menuRef}>
         <button

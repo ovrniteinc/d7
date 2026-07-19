@@ -7,7 +7,9 @@ import { auth } from "../lib/firebase";
 import { COL, patchDoc } from "../lib/db";
 import { useAuth } from "../lib/auth";
 import { GlassPanel, LiftedTile, SectionLabel, Avatar } from "../components/ui";
+import AvatarCropModal from "../components/AvatarCropModal";
 import { resetPasswordSchema } from "../lib/schemas";
+import { requestBrowserNotificationPermission } from "../lib/notifications";
 
 export default function Profile() {
   const { profile, refreshProfile, signOut } = useAuth();
@@ -24,6 +26,8 @@ export default function Profile() {
     comment_on_task: true,
     daily_summary: false,
   });
+  const [cropOpen, setCropOpen] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const saveProfile = async () => {
@@ -43,24 +47,27 @@ export default function Profile() {
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please choose an image file");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("Image must be smaller than 8 MB");
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = 256;
-        canvas.height = 256;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        const ratio = Math.max(256 / img.width, 256 / img.height);
-        const x = (img.width * ratio - 256) / 2 / ratio;
-        const y = (img.height * ratio - 256) / 2 / ratio;
-        ctx.drawImage(img, -x, -y, 256 / ratio, 256 / ratio);
-        setAvatar(canvas.toDataURL("image/jpeg", 0.85));
-      };
-      img.src = reader.result as string;
+      setCropImageSrc(reader.result as string);
+      setCropOpen(true);
     };
     reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const closeCrop = () => {
+    setCropOpen(false);
+    setCropImageSrc(null);
   };
 
   const changePassword = async () => {
@@ -83,6 +90,15 @@ export default function Profile() {
   const saveNotifs = async () => {
     try {
       await patchDoc(COL.profiles, profile!.id, { notif_prefs: notifPrefs });
+      await refreshProfile();
+      if (Object.values(notifPrefs).some(Boolean)) {
+        const permission = await requestBrowserNotificationPermission();
+        if (permission === "denied") {
+          toast.message("Browser notifications blocked", {
+            description: "Enable notifications for this site in your browser settings to get alerts while the app is open.",
+          });
+        }
+      }
       toast.success("Preferences saved");
     } catch (e) {
       toast.error((e as Error).message);
@@ -93,6 +109,15 @@ export default function Profile() {
 
   return (
     <div className="max-w-2xl space-y-5">
+      <AvatarCropModal
+        open={cropOpen}
+        imageSrc={cropImageSrc}
+        onClose={closeCrop}
+        onConfirm={(cropped) => {
+          setAvatar(cropped);
+          toast.message("Photo updated", { description: "Click Save profile to keep this change." });
+        }}
+      />
       <LiftedTile className="p-6">
         <SectionLabel>Profile</SectionLabel>
         <div className="flex items-center gap-4 mb-6">
@@ -137,6 +162,9 @@ export default function Profile() {
 
       <GlassPanel className="p-6">
         <SectionLabel>Notification preferences</SectionLabel>
+        <p className="text-xs text-white/45 mb-4 leading-relaxed">
+          When enabled, you get in-app alerts and browser notifications while District 7 is open, plus email alerts on the deployed site (requires Resend setup on Vercel). Daily summary emails are planned for a future update.
+        </p>
         <div className="space-y-3">
           {[
             { key: "task_assigned", label: "Task assigned to me" },

@@ -1,5 +1,6 @@
-import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
-import { auth } from "./firebase";
+import { initializeApp, deleteApp, type FirebaseApp } from "firebase/app";
+import { createUserWithEmailAndPassword, signOut as firebaseSignOut, getAuth } from "firebase/auth";
+import { auth, app as firebaseApp } from "./firebase";
 import {
   COL,
   createDoc,
@@ -46,7 +47,7 @@ export async function setupInitialAdmin(email?: string, password?: string, name?
 
   const existingProfile = await getDocById(COL.profiles, uid);
   if (existingProfile) {
-    await signOut(auth);
+    await firebaseSignOut(auth);
     throw new Error("An admin profile already exists for this account.");
   }
 
@@ -71,7 +72,7 @@ export async function setupInitialAdmin(email?: string, password?: string, name?
   await upsertDoc(COL.meta, "app", { setupComplete: true, updated_at: now });
   await logActivity("system.setup_admin", "user", uid, { email: adminEmail });
 
-  await signOut(auth);
+  await firebaseSignOut(auth);
 
   return { ok: true, email: adminEmail, id: uid };
 }
@@ -88,23 +89,71 @@ export async function createTeamUser(input: {
     throw new Error("Password must be at least 8 characters");
   }
 
-  await upsertDoc(COL.userInvites, email, {
-    email,
-    name: input.name,
-    title: input.title || "",
-    role: input.role,
-    must_reset_password: true,
-    created_at: new Date().toISOString(),
-  });
+  const existingProfiles = await listDocs<{ email: string }>(COL.profiles);
+  if (existingProfiles.some((p) => normalizeEmail(p.email) === email)) {
+    throw new Error("A user with this email already exists.");
+  }
 
-  return {
-    id: email,
-    email: input.email,
-    name: input.name,
-    role: input.role,
-    password: input.password,
-    needsConsoleAuth: true,
-  };
+  let secondaryApp: FirebaseApp | null = null;
+
+  try {
+    secondaryApp = initializeApp(firebaseApp.options, `Secondary_${Date.now()}`);
+    const secondaryAuth = getAuth(secondaryApp);
+    const cred = await createUserWithEmailAndPassword(secondaryAuth, email, input.password);
+    const uid = cred.user.uid;
+    await firebaseSignOut(secondaryAuth);
+
+    const now = new Date().toISOString();
+    await createDoc(
+      COL.profiles,
+      {
+        email,
+        name: input.name,
+        title: input.title || "",
+        role: input.role,
+        status: "active",
+        must_reset_password: true,
+        avatar_url: null,
+        notif_prefs: {},
+        created_at: now,
+        updated_at: now,
+      },
+      uid,
+    );
+
+    await removeDoc(COL.userInvites, email).catch(() => {});
+    await logActivity("user.create", "user", uid, { email, role: input.role, name: input.name });
+
+    return {
+      id: uid,
+      email: input.email,
+      name: input.name,
+      role: input.role,
+      password: input.password,
+      needsConsoleAuth: false,
+    };
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === "auth/email-already-in-use") {
+      throw new Error("This email is already registered in Firebase Auth.");
+    }
+    if (code === "auth/operation-not-allowed") {
+      throw new Error(
+        "Email/password sign-up is disabled in Firebase. Enable Email/Password under Authentication → Sign-in method.",
+      );
+    }
+    if (code === "auth/invalid-email") {
+      throw new Error("Enter a valid email address.");
+    }
+    if (code === "auth/weak-password") {
+      throw new Error("Password is too weak. Use at least 8 characters.");
+    }
+    throw error;
+  } finally {
+    if (secondaryApp) {
+      await deleteApp(secondaryApp).catch(() => {});
+    }
+  }
 }
 
 export async function updateUserRole(userId: string, role: "admin" | "staff") {

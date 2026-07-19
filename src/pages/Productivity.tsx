@@ -7,7 +7,7 @@ import { COL, listDocs, type WhereClause } from "../lib/db";
 import { useAuth } from "../lib/auth";
 import { useUIStore } from "../lib/ui-store";
 import { GlassPanel, LiftedTile, StatTile, EmptyState, SectionLabel, Avatar } from "../components/ui";
-import { fmtHours } from "../lib/format";
+import { fmtHours, fmtUsageDuration } from "../lib/format";
 import type { SessionActivity, Profile, AppUsage } from "../lib/types";
 
 export default function Productivity() {
@@ -222,12 +222,14 @@ export default function Productivity() {
                     <span className="dot" style={{ background: u.category === "work" ? "rgba(255,255,255,0.85)" : u.category === "distraction" ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.15)" }} />
                     <span className="text-white/80 w-32 truncate">{u.app_name}</span>
                     <span className="text-white/40 flex-1 truncate">{u.window_title}</span>
-                    <span className="mono text-white/60">{u.duration_seconds ? fmtHours(u.duration_seconds) : "—"}</span>
+                    <span className="mono text-white/60 shrink-0 w-12 text-right">
+                      {fmtUsageDuration(u.duration_seconds, !u.ended_at)}
+                    </span>
                   </div>
                 ))}
               </div>
             ) : (
-              <EmptyState title="No app usage recorded" hint="Install the desktop agent to sync app usage." icon={<Clock size={28} />} />
+              <EmptyState title="No app usage recorded" hint="Start Work Tracker — browser activity is logged automatically while the timer runs." icon={<Clock size={28} />} />
             )}
           </GlassPanel>
         </>

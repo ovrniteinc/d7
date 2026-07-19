@@ -5,6 +5,8 @@ import { AuthProvider, useAuth } from "./lib/auth";
 import Sidebar from "./components/shell/Sidebar";
 import Topbar from "./components/shell/Topbar";
 import TaskDrawer from "./components/shell/TaskDrawer";
+import SessionUsageSync from "./components/shell/SessionUsageSync";
+import NotificationListener from "./components/shell/NotificationListener";
 import Login from "./pages/auth/Login";
 import ForcePasswordReset from "./pages/auth/ForcePasswordReset";
 import Dashboard from "./pages/Dashboard";
@@ -41,6 +43,8 @@ function Shell({ children }: { children: React.ReactNode }) {
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>
       </div>
       <TaskDrawer />
+      <SessionUsageSync />
+      <NotificationListener />
     </div>
   );
 }

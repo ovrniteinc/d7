@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { COL, listDocs, type WhereClause } from "../lib/db";
 import { useUIStore } from "../lib/ui-store";
 import { GlassPanel, EmptyState, SectionLabel } from "../components/ui";
-import { fmtDateTime, fmtClock } from "../lib/format";
+import { fmtDateTime, fmtClock, fmtActivityAction } from "../lib/format";
 import type { ActivityLog, TimeLog, AppUsage, Profile, Task, Project } from "../lib/types";
 
 type Tab = "audit" | "time" | "usage";
@@ -89,7 +89,13 @@ export default function Reports() {
     if (tab === "audit") {
       rows = [["Time", "User", "Action", "Entity", "Details"]];
       (auditLogs || []).forEach((l) => {
-        rows.push([fmtDateTime(l.created_at), userMap[l.user_id || ""]?.name || "—", l.action, l.entity_type || "—", JSON.stringify(l.meta || {})]);
+        rows.push([
+          fmtDateTime(l.created_at),
+          userMap[l.user_id || ""]?.name || "—",
+          fmtActivityAction(l.action, l.meta),
+          l.entity_type || "—",
+          JSON.stringify(l.meta || {}),
+        ]);
       });
     } else if (tab === "time") {
       rows = [["Started", "User", "Duration", "Task", "Project", "Source"]];
@@ -152,7 +158,7 @@ export default function Reports() {
                       <tr key={l.id} className="table-row">
                         <td className="py-2.5 pr-4 text-white/60 text-xs whitespace-nowrap">{fmtDateTime(l.created_at)}</td>
                         <td className="py-2.5 pr-4 text-white/70 text-xs">{userMap[l.user_id || ""]?.name || "System"}</td>
-                        <td className="py-2.5 pr-4 text-white/80 text-xs mono">{l.action}</td>
+                        <td className="py-2.5 pr-4 text-white/80 text-xs">{fmtActivityAction(l.action, l.meta)}</td>
                         <td className="py-2.5 pr-4 text-white/50 text-xs">{l.entity_type || "—"}</td>
                         <td className="py-2.5 pr-4 text-white/40 text-xs truncate max-w-[200px]">{JSON.stringify(l.meta || {})}</td>
                       </tr>
@@ -228,7 +234,7 @@ export default function Reports() {
                   </tbody>
                 </table>
               </div>
-            ) : <EmptyState title="No app usage data" hint="Install the desktop agent to sync usage." icon={<Download size={28} />} />}
+            ) : <EmptyState title="No app usage data" hint="Usage is recorded automatically when users run Work Tracker." icon={<Download size={28} />} />}
           </>
         )}
       </GlassPanel>

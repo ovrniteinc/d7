@@ -7,6 +7,7 @@ export type ProjectStatus = "active" | "on_hold" | "archived";
 export type EventType = "company" | "personal";
 export type TimeLogSource = "timer" | "auto" | "manual" | "agent";
 export type AppCategory = "work" | "neutral" | "distraction";
+export type NotificationType = "task_assigned" | "comment_on_task" | "daily_summary";
 
 export interface Profile {
   id: string;
@@ -165,6 +166,20 @@ export interface PresenceRow {
   name: string;
   avatar_url: string | null;
   last_seen: string;
+}
+
+export interface AppNotification {
+  id: string;
+  user_id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  link: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
+  actor_id: string | null;
+  read: boolean;
+  created_at: string;
 }
 
 export interface UserInvite {
