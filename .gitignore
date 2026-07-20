@@ -21,6 +21,8 @@ dist-ssr
 *.sln
 *.sw?
 .env
+.env.local
+.firebase-service-account.json
 .firebase-service-account-oneline.txt
 agent/.d7-device-id
 agent/node_modules

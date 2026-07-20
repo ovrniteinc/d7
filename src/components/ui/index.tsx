@@ -136,13 +136,43 @@ export function Modal({ open, onClose, children, title, wide }: { open: boolean;
   );
 }
 
-export function ConfirmDialog({ open, onClose, onConfirm, title, message, confirmLabel = "Confirm" }: { open: boolean; onClose: () => void; onConfirm: () => void; title: string; message: string; confirmLabel?: string }) {
+export function ConfirmDialog({
+  open,
+  onClose,
+  onConfirm,
+  title,
+  message,
+  confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
+  danger = false,
+  loading = false,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => void | Promise<void>;
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+  loading?: boolean;
+}) {
+  const handleConfirm = async () => {
+    await onConfirm();
+  };
+
   return (
-    <Modal open={open} onClose={onClose} title={title}>
+    <Modal open={open} onClose={loading ? () => {} : onClose} title={title}>
       <p className="text-sm text-white/65 mb-6">{message}</p>
       <div className="flex justify-end gap-3">
-        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" onClick={() => { onConfirm(); onClose(); }}>{confirmLabel}</button>
+        <button className="btn btn-ghost" onClick={onClose} disabled={loading}>{cancelLabel}</button>
+        <button
+          className={danger ? "btn btn-danger" : "btn btn-primary"}
+          onClick={handleConfirm}
+          disabled={loading}
+        >
+          {loading ? "Please wait…" : confirmLabel}
+        </button>
       </div>
     </Modal>
   );

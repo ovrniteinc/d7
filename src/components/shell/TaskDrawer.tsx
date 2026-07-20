@@ -1,18 +1,22 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { X, Trash2, Play, Square, Send } from "lucide-react";
+import { X, Trash2, Play, Square, Send, Paperclip, Download } from "lucide-react";
 import { COL, createDoc, getDocById, listDocs, patchDoc, removeDoc } from "../../lib/db";
 import { useAuth } from "../../lib/auth";
 import { useUIStore } from "../../lib/ui-store";
 import { STATUS_LABELS, PRIORITIES, PRIORITY_DOTS } from "../../lib/constants";
-import type { Task, Comment, Profile, Project, TimeLog, Priority, TaskStatus } from "../../lib/types";
+import type { Task, Comment, Profile, Project, TimeLog, Priority, TaskStatus, TaskAttachment } from "../../lib/types";
 import { Avatar, MonoBadge, StatusDot } from "../ui";
 import { fmtRelative, fmtClock, fmtHours, fmtDate } from "../../lib/format";
 import { logActivity, rollupTimeLog } from "../../lib/functions";
-import { notifyTaskAssignedMany, notifyTaskCommentAssignees } from "../../lib/notifications";
+import { notifyTaskAssignedMany, notifyTaskCommentAssignees, notifyTaskMentionMany } from "../../lib/notifications";
 import { newAssigneeIds } from "../../lib/tasks";
+import { newMentionIds } from "../../lib/rich-text";
+import { readAttachmentFile, formatFileSize } from "../../lib/task-attachments";
 import { AssigneeList, AssigneeMultiSelect } from "../AssigneePicker";
+import MentionTextarea from "../MentionTextarea";
+import { RichText } from "../RichText";
 
 export default function TaskDrawer() {
   const { profile, isAdmin } = useAuth();
@@ -92,6 +96,18 @@ export default function TaskDrawer() {
     enabled: !!selectedTaskId,
   });
 
+  const { data: attachments } = useQuery<TaskAttachment[]>({
+    queryKey: ["task-attachments", selectedTaskId],
+    queryFn: () =>
+      listDocs<TaskAttachment>(COL.taskAttachments, {
+        where: [["task_id", "==", selectedTaskId!]],
+        orderBy: [["created_at", "desc"]],
+      }),
+    enabled: !!selectedTaskId,
+  });
+
+  const [uploading, setUploading] = useState(false);
+
   useEffect(() => {
     if (task) {
       setEditTitle(task.title);
@@ -148,17 +164,32 @@ export default function TaskDrawer() {
       qc.invalidateQueries({ queryKey: ["comments", selectedTaskId] });
       const body = commentBody.trim();
       setCommentBody("");
-      if (task?.assignee_ids?.length && profile && body) {
-        const recipients = task.assignee_ids.filter((id) => id !== profile.id);
-        if (recipients.length) {
-          await notifyTaskCommentAssignees({
-            assigneeIds: recipients,
+      if (task && profile && body) {
+        const mentionIds = newMentionIds("", body).filter((id) => id !== profile.id);
+        if (mentionIds.length) {
+          await notifyTaskMentionMany({
+            recipientIds: mentionIds,
             actorId: profile.id,
             actorName: profile.name || profile.email,
             taskId: task.id,
             taskTitle: task.title,
-            preview: body.length > 120 ? `${body.slice(0, 117)}…` : body,
+            context: "comment",
           }).catch(() => {});
+        }
+        if (task.assignee_ids?.length) {
+          const recipients = task.assignee_ids.filter(
+            (id) => id !== profile.id && !mentionIds.includes(id),
+          );
+          if (recipients.length) {
+            await notifyTaskCommentAssignees({
+              assigneeIds: recipients,
+              actorId: profile.id,
+              actorName: profile.name || profile.email,
+              taskId: task.id,
+              taskTitle: task.title,
+              preview: body.length > 120 ? `${body.slice(0, 117)}…` : body,
+            }).catch(() => {});
+          }
         }
       }
     },
@@ -207,6 +238,7 @@ export default function TaskDrawer() {
 
   const saveEdit = async () => {
     const previousAssignees = task?.assignee_ids || [];
+    const previousDesc = task?.description || "";
     const nextAssignees = editAssigneeIds;
     updateTask.mutate({
       title: editTitle,
@@ -229,6 +261,49 @@ export default function TaskDrawer() {
           taskTitle: editTitle || task?.title || "Task",
         }).catch(() => {});
       }
+      const mentioned = newMentionIds(previousDesc, editDesc).filter((id) => id !== profile.id);
+      if (mentioned.length) {
+        await notifyTaskMentionMany({
+          recipientIds: mentioned,
+          actorId: profile.id,
+          actorName: profile.name || profile.email,
+          taskId: selectedTaskId!,
+          taskTitle: editTitle || task?.title || "Task",
+          context: "description",
+        }).catch(() => {});
+      }
+    }
+  };
+
+  const uploadAttachment = async (file: File) => {
+    if (!profile || !selectedTaskId) return;
+    setUploading(true);
+    try {
+      const { dataUrl, sizeBytes } = await readAttachmentFile(file);
+      await createDoc(COL.taskAttachments, {
+        task_id: selectedTaskId,
+        user_id: profile.id,
+        file_name: file.name,
+        file_type: file.type || "application/octet-stream",
+        file_url: dataUrl,
+        size_bytes: sizeBytes,
+      });
+      qc.invalidateQueries({ queryKey: ["task-attachments", selectedTaskId] });
+      toast.success("File attached");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const deleteAttachment = async (id: string) => {
+    try {
+      await removeDoc(COL.taskAttachments, id);
+      qc.invalidateQueries({ queryKey: ["task-attachments", selectedTaskId] });
+      toast.success("Attachment removed");
+    } catch (e) {
+      toast.error((e as Error).message);
     }
   };
 
@@ -258,10 +333,59 @@ export default function TaskDrawer() {
           <div>
             <p className="label">Description</p>
             {editMode && isAdmin ? (
-              <textarea className="input" value={editDesc} onChange={(e) => setEditDesc(e.target.value)} />
+              <MentionTextarea value={editDesc} onChange={setEditDesc} users={allUsers || []} placeholder="Add details, @mention teammates, or paste links…" />
+            ) : task.description ? (
+              <RichText text={task.description} className="text-sm text-white/65" />
             ) : (
-              <p className="text-sm text-white/65 whitespace-pre-wrap">{task.description || "No description."}</p>
+              <p className="text-sm text-white/65">No description.</p>
             )}
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="label">Attachments</p>
+              <label className="btn btn-ghost !py-1 !px-2 !text-xs cursor-pointer">
+                <Paperclip size={13} /> {uploading ? "Uploading…" : "Attach"}
+                <input
+                  type="file"
+                  className="hidden"
+                  disabled={uploading}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) uploadAttachment(file);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
+            <div className="space-y-2">
+              {(attachments || []).map((a) => (
+                <div key={a.id} className="flex items-center gap-2 glass px-3 py-2 rounded-xl">
+                  <Paperclip size={13} className="text-white/40 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <a
+                      href={a.file_url}
+                      download={a.file_name}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm text-sky-300 hover:text-sky-200 truncate block"
+                    >
+                      {a.file_name}
+                    </a>
+                    <span className="text-[10px] text-white/35">{formatFileSize(a.size_bytes)}</span>
+                  </div>
+                  <a href={a.file_url} download={a.file_name} className="text-white/40 hover:text-white p-1">
+                    <Download size={13} />
+                  </a>
+                  {isAdmin && (
+                    <button onClick={() => deleteAttachment(a.id)} className="text-white/40 hover:text-red-300 p-1">
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
+              ))}
+              {!attachments?.length && <p className="text-xs text-white/30">No files attached.</p>}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -377,22 +501,24 @@ export default function TaskDrawer() {
                         <span className="text-sm text-white/85">{cp?.name || "Unknown"}</span>
                         <span className="text-[10px] text-white/35">{fmtRelative(c.created_at)}</span>
                       </div>
-                      <p className="text-sm text-white/60 mt-0.5 whitespace-pre-wrap">{c.body}</p>
+                      <RichText text={c.body} className="text-sm text-white/60 mt-0.5" />
                     </div>
                   </div>
                 );
               })}
               {!comments?.length && <p className="text-xs text-white/30">No comments yet.</p>}
             </div>
-            <div className="flex gap-2">
-              <input
-                className="input"
-                placeholder="Add a comment…"
-                value={commentBody}
-                onChange={(e) => setCommentBody(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && commentBody.trim()) { addComment.mutate(); } }}
-              />
-              <button onClick={() => commentBody.trim() && addComment.mutate()} className="btn btn-ghost" disabled={addComment.isPending}>
+            <div className="flex gap-2 items-end">
+              <div className="flex-1">
+                <MentionTextarea
+                  value={commentBody}
+                  onChange={setCommentBody}
+                  users={allUsers || []}
+                  placeholder="Add a comment…"
+                  rows={2}
+                />
+              </div>
+              <button onClick={() => commentBody.trim() && addComment.mutate()} className="btn btn-ghost shrink-0" disabled={addComment.isPending}>
                 <Send size={14} />
               </button>
             </div>

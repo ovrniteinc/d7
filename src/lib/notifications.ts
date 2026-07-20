@@ -24,7 +24,7 @@ export async function markAllNotificationsRead(ids: string[]): Promise<void> {
 const PREF_BY_TYPE: Record<NotificationType, string> = {
   task_assigned: "task_assigned",
   comment_on_task: "comment_on_task",
-  daily_summary: "daily_summary",
+  task_mention: "task_mention",
 };
 
 function prefEnabled(profile: Profile, type: NotificationType) {
@@ -187,4 +187,47 @@ export async function notifyTaskComment(input: {
     entityType: "task",
     entityId: input.taskId,
   });
+}
+
+export async function notifyTaskMention(input: {
+  recipientId: string;
+  actorId: string;
+  actorName: string;
+  taskId: string;
+  taskTitle: string;
+  context: "description" | "comment";
+}) {
+  return notifyUser({
+    recipientId: input.recipientId,
+    actorId: input.actorId,
+    type: "task_mention",
+    title: "You were mentioned in a task",
+    body: `${input.actorName} mentioned you in “${input.taskTitle}” (${input.context})`,
+    link: `/tasks?task=${input.taskId}`,
+    entityType: "task",
+    entityId: input.taskId,
+  });
+}
+
+export async function notifyTaskMentionMany(input: {
+  recipientIds: string[];
+  actorId: string;
+  actorName: string;
+  taskId: string;
+  taskTitle: string;
+  context: "description" | "comment";
+}) {
+  const unique = [...new Set(input.recipientIds.filter(Boolean))];
+  await Promise.all(
+    unique.map((recipientId) =>
+      notifyTaskMention({
+        recipientId,
+        actorId: input.actorId,
+        actorName: input.actorName,
+        taskId: input.taskId,
+        taskTitle: input.taskTitle,
+        context: input.context,
+      }).catch(() => {}),
+    ),
+  );
 }

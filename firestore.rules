@@ -110,6 +110,18 @@ service cloud.firestore {
       allow delete: if isAdmin() || (signedIn() && resource.data.user_id == request.auth.uid);
     }
 
+    match /task_attachments/{attachmentId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.task_id is string
+        && request.resource.data.file_name is string
+        && request.resource.data.file_url is string
+        && request.resource.data.size_bytes is number
+        && request.resource.data.size_bytes <= 2097152;
+      allow delete: if isAdmin() || (signedIn() && resource.data.user_id == request.auth.uid);
+    }
+
     match /time_logs/{logId} {
       allow read: if isAdmin() || (signedIn() && resource.data.user_id == request.auth.uid);
       allow create: if signedIn() && request.resource.data.user_id == request.auth.uid;
@@ -173,7 +185,8 @@ service cloud.firestore {
 
     match /presence/{userId} {
       allow read: if signedIn();
-      allow create, update, delete: if isSelf(userId);
+      allow create, update: if isSelf(userId);
+      allow delete: if isAdmin() || isSelf(userId);
     }
 
     function notificationFieldsUnchanged() {

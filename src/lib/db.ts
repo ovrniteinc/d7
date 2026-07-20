@@ -25,6 +25,7 @@ export const COL = {
   projectMembers: "project_members",
   tasks: "tasks",
   comments: "comments",
+  taskAttachments: "task_attachments",
   timeLogs: "time_logs",
   events: "events",
   stickyNotes: "sticky_notes",

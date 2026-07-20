@@ -24,7 +24,7 @@ export default function Profile() {
   const [notifPrefs, setNotifPrefs] = useState<Record<string, boolean>>(profile?.notif_prefs || {
     task_assigned: true,
     comment_on_task: true,
-    daily_summary: false,
+    task_mention: true,
   });
   const [cropOpen, setCropOpen] = useState(false);
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
@@ -163,13 +163,13 @@ export default function Profile() {
       <GlassPanel className="p-6">
         <SectionLabel>Notification preferences</SectionLabel>
         <p className="text-xs text-white/45 mb-4 leading-relaxed">
-          When enabled, you get in-app alerts and browser notifications while District 7 is open, plus email alerts on the deployed site (requires Resend setup on Vercel). Daily summary emails are planned for a future update.
+          When enabled, you get in-app alerts and browser notifications while District 7 is open, plus email alerts on the deployed site (requires Resend setup on Vercel).
         </p>
         <div className="space-y-3">
           {[
             { key: "task_assigned", label: "Task assigned to me" },
             { key: "comment_on_task", label: "Comment on my task" },
-            { key: "daily_summary", label: "Daily summary" },
+            { key: "task_mention", label: "Mentioned in a task" },
           ].map((n) => (
             <div key={n.key} className="flex items-center justify-between">
               <span className="text-sm text-white/75 flex items-center gap-2"><Bell size={14} className="text-white/40" /> {n.label}</span>

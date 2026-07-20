@@ -7,17 +7,19 @@ import {
   PointerSensor, useSensor, useSensors, closestCorners,
   type DragStartEvent, type DragEndEvent, type DragCancelEvent,
 } from "@dnd-kit/core";
-import { Plus } from "lucide-react";
+import { Plus, LayoutGrid, Table2, Search } from "lucide-react";
 import { COL, createDoc, getDocById, listDocs, patchDoc } from "../lib/db";
 import { useAuth } from "../lib/auth";
 import { useUIStore } from "../lib/ui-store";
 import { Modal, EmptyState, MonoBadge, ShadeStripe } from "../components/ui";
-import { STATUS_LABELS, PRIORITY_DOTS, DEFAULT_KANBAN_COLUMNS } from "../lib/constants";
+import { STATUS_LABELS, PRIORITIES, PRIORITY_DOTS, DEFAULT_KANBAN_COLUMNS } from "../lib/constants";
 import { taskSchema } from "../lib/schemas";
 import { logActivity } from "../lib/functions";
 import { notifyTaskAssignedMany } from "../lib/notifications";
 import { taskHasAssignee } from "../lib/tasks";
 import { AssigneeAvatars, AssigneeMultiSelect } from "../components/AssigneePicker";
+import MentionTextarea from "../components/MentionTextarea";
+import TaskTableView from "../components/tasks/TaskTableView";
 import { fmtDate } from "../lib/format";
 import type { Task, Project, Profile, TaskStatus, Priority, ShadeKey } from "../lib/types";
 
@@ -26,6 +28,11 @@ export default function Tasks() {
   const { personFilter, projectFilter, openTask } = useUIStore();
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"board" | "table">("board");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<TaskStatus | "">("");
+  const [priorityFilter, setPriorityFilter] = useState<Priority | "">("");
+  const [assigneeFilter, setAssigneeFilter] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [pendingMoves, setPendingMoves] = useState<Record<string, Partial<Task>>>({});
 
@@ -77,8 +84,20 @@ export default function Tasks() {
     }
     if (projectFilter) list = list.filter((t) => t.project_id === projectFilter);
     if (personFilter && isAdmin) list = list.filter((t) => taskHasAssignee(t, personFilter));
+    if (assigneeFilter) list = list.filter((t) => taskHasAssignee(t, assigneeFilter));
+    if (statusFilter) list = list.filter((t) => t.status === statusFilter);
+    if (priorityFilter) list = list.filter((t) => t.priority === priorityFilter);
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter(
+        (t) =>
+          t.title.toLowerCase().includes(q) ||
+          t.description.toLowerCase().includes(q) ||
+          (projectMap[t.project_id]?.name || "").toLowerCase().includes(q),
+      );
+    }
     return list;
-  }, [tasks, pendingMoves, projectFilter, personFilter, isAdmin]);
+  }, [tasks, pendingMoves, projectFilter, personFilter, assigneeFilter, statusFilter, priorityFilter, searchQuery, isAdmin, projectMap]);
 
   const clearPendingMove = (id: string) => {
     setPendingMoves((prev) => {
@@ -172,16 +191,63 @@ export default function Tasks() {
 
   return (
     <div className="h-full flex flex-col gap-4">
-      {isAdmin && (
-        <div className="flex justify-end">
-          <button className="btn btn-primary" onClick={() => setDialogOpen(true)}>
-            <Plus size={15} /> New Task
-          </button>
+      <div className="flex flex-col lg:flex-row lg:items-center gap-3 justify-between">
+        <div className="flex flex-wrap items-center gap-2 flex-1">
+          <div className="relative flex-1 min-w-[180px] max-w-xs">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+            <input
+              className="input !pl-9 !py-2 !text-xs w-full"
+              placeholder="Search tasks…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <select className="input !py-2 !px-3 !text-xs w-36" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as TaskStatus | "")}>
+            <option value="">All statuses</option>
+            {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <select className="input !py-2 !px-3 !text-xs w-32" value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value as Priority | "")}>
+            <option value="">All priorities</option>
+            {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <select className="input !py-2 !px-3 !text-xs w-40" value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
+            <option value="">All assignees</option>
+            {(users || []).map((u) => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}
+          </select>
         </div>
-      )}
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-xl border border-white/10 overflow-hidden">
+            <button
+              onClick={() => setViewMode("board")}
+              className={`px-3 py-2 text-xs flex items-center gap-1.5 transition ${viewMode === "board" ? "bg-white/15 text-white" : "text-white/50 hover:text-white/80"}`}
+            >
+              <LayoutGrid size={14} /> Board
+            </button>
+            <button
+              onClick={() => setViewMode("table")}
+              className={`px-3 py-2 text-xs flex items-center gap-1.5 transition ${viewMode === "table" ? "bg-white/15 text-white" : "text-white/50 hover:text-white/80"}`}
+            >
+              <Table2 size={14} /> Table
+            </button>
+          </div>
+          {isAdmin && (
+            <button className="btn btn-primary" onClick={() => setDialogOpen(true)}>
+              <Plus size={15} /> New Task
+            </button>
+          )}
+        </div>
+      </div>
 
-      {!filteredTasks.length && !projectFilter ? (
+      {!filteredTasks.length && !projectFilter && !searchQuery && !statusFilter && !priorityFilter && !assigneeFilter ? (
         <EmptyState title="No tasks yet" hint={isAdmin ? "Create your first task." : "Tasks will appear here once created."} icon={<Plus size={32} />} />
+      ) : viewMode === "table" ? (
+        <TaskTableView
+          tasks={filteredTasks}
+          projectMap={projectMap}
+          userMap={userMap}
+          commentCounts={commentCounts || {}}
+          onOpen={openTask}
+        />
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragCancel={onDragCancel} onDragEnd={onDragEnd}>
           <div className="flex gap-4 overflow-x-auto pb-4 flex-1">
@@ -350,7 +416,7 @@ function TaskDialog({ open, onClose, projects, users }: { open: boolean; onClose
         </div>
         <div>
           <label className="label">Description</label>
-          <textarea className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
+          <MentionTextarea value={description} onChange={setDescription} users={users} placeholder="Add details, @mention teammates, or paste links…" />
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>

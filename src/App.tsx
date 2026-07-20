@@ -20,6 +20,7 @@ import Reports from "./pages/Reports";
 import UserManagement from "./pages/UserManagement";
 import Settings from "./pages/Settings";
 import Profile from "./pages/Profile";
+import Sessions from "./pages/Sessions";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } },
@@ -111,6 +112,7 @@ export default function App() {
             <Route path="/productivity" element={<Protected><Productivity /></Protected>} />
             <Route path="/reports" element={<Protected><AdminOnly><Reports /></AdminOnly></Protected>} />
             <Route path="/user-management" element={<Protected><AdminOnly><UserManagement /></AdminOnly></Protected>} />
+            <Route path="/sessions" element={<Protected><AdminOnly><Sessions /></AdminOnly></Protected>} />
             <Route path="/settings" element={<Protected><AdminOnly><Settings /></AdminOnly></Protected>} />
             <Route path="/profile" element={<Protected><Profile /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />

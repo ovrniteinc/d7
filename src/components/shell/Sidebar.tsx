@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, FolderKanban, ListTodo, Calendar, StickyNote, Timer,
-  BarChart3, ScrollText, Users, Settings, User, X,
+  BarChart3, ScrollText, Users, Settings, User, X, Monitor,
 } from "lucide-react";
 import { useAuth } from "../../lib/auth";
 import { useUIStore } from "../../lib/ui-store";
@@ -16,6 +16,7 @@ const NAV = [
   { to: "/tracker", label: "Work Tracker", icon: Timer, adminOnly: false },
   { to: "/productivity", label: "Productivity", icon: BarChart3, adminOnly: false },
   { to: "/reports", label: "Reports & Logs", icon: ScrollText, adminOnly: true },
+  { to: "/sessions", label: "Sessions & Devices", icon: Monitor, adminOnly: true },
   { to: "/user-management", label: "User Management", icon: Users, adminOnly: true },
   { to: "/settings", label: "Settings", icon: Settings, adminOnly: true },
   { to: "/profile", label: "Profile", icon: User, adminOnly: false },

@@ -3,8 +3,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Copy, RefreshCw, Trash2 } from "lucide-react";
 import { COL, listDocs, patchDoc, removeDoc } from "../lib/db";
+import { deleteTeamUserAuth } from "../lib/delete-user";
 import { useAuth } from "../lib/auth";
-import { GlassPanel, Modal, Avatar, EmptyState, SectionLabel, StatusDot } from "../components/ui";
+import { GlassPanel, Modal, Avatar, EmptyState, SectionLabel, StatusDot, ConfirmDialog } from "../components/ui";
 import { fmtDate } from "../lib/format";
 import { createTeamUser, updateUserRole, logActivity } from "../lib/functions";
 import { sendUserInviteEmail } from "../lib/user-invite-email";
@@ -20,8 +21,11 @@ export default function UserManagement() {
     email: string;
     password: string;
     inviteSent?: boolean;
+    inviteError?: string | null;
     needsConsoleAuth?: boolean;
   } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Profile | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const { data: users } = useQuery<Profile[]>({
     queryKey: ["profiles"],
@@ -47,17 +51,31 @@ export default function UserManagement() {
     toast.success("User will be required to reset password on next login");
   };
 
-  const deleteUser = async (id: string) => {
-    const admins = (users || []).filter((u) => u.role === "admin" && u.status === "active");
-    if (id === me?.id) { toast.error("Cannot delete yourself"); return; }
-    if (admins.length <= 1 && admins[0]?.id === id) { toast.error("Cannot delete the last active admin"); return; }
+  const requestDelete = (u: Profile) => {
+    const admins = (users || []).filter((x) => x.role === "admin" && x.status === "active");
+    if (u.id === me?.id) { toast.error("Cannot delete yourself"); return; }
+    if (admins.length <= 1 && admins[0]?.id === u.id) { toast.error("Cannot delete the last active admin"); return; }
+    setDeleteTarget(u);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      await removeDoc(COL.profiles, id);
-      logActivity("user.delete", "user", id);
+      await deleteTeamUserAuth(deleteTarget.id, deleteTarget.email);
+      await removeDoc(COL.profiles, deleteTarget.id);
+      await removeDoc(COL.presence, deleteTarget.id).catch(() => {});
+      if (deleteTarget.email) {
+        await removeDoc(COL.userInvites, deleteTarget.email.trim().toLowerCase()).catch(() => {});
+      }
+      logActivity("user.delete", "user", deleteTarget.id);
       qc.invalidateQueries({ queryKey: ["profiles"] });
-      toast.success("User deleted");
+      toast.success("User deleted from workspace and Firebase Auth");
+      setDeleteTarget(null);
     } catch (e) {
       toast.error((e as Error).message);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -96,7 +114,7 @@ export default function UserManagement() {
                       <div className="flex gap-1">
                         <button onClick={() => { setEditUser(u); setDialogOpen(true); }} className="btn btn-ghost !p-2 !text-xs">Edit</button>
                         <button onClick={() => toggleStatus(u)} className="btn btn-ghost !p-2" title="Toggle status"><RefreshCw size={12} /></button>
-                        <button onClick={() => deleteUser(u.id)} className="btn btn-danger !p-2"><Trash2 size={12} /></button>
+                        <button onClick={() => requestDelete(u)} className="btn btn-danger !p-2"><Trash2 size={12} /></button>
                       </div>
                     </td>
                   </tr>
@@ -117,6 +135,22 @@ export default function UserManagement() {
         createdCreds={createdCreds}
         onResetPassword={resetPassword}
       />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => { if (!deleting) setDeleteTarget(null); }}
+        onConfirm={confirmDelete}
+        title="Delete user?"
+        message={
+          deleteTarget
+            ? `This permanently removes ${deleteTarget.name || deleteTarget.email} from District 7 and deletes their Firebase login. This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete user"
+        cancelLabel="Cancel"
+        danger
+        loading={deleting}
+      />
     </div>
   );
 }
@@ -125,8 +159,8 @@ function UserDialog({ open, onClose, editUser, onCreated, createdCreds, onResetP
   open: boolean;
   onClose: () => void;
   editUser: Profile | null;
-  onCreated: (creds: { email: string; password: string; inviteSent?: boolean; needsConsoleAuth?: boolean }) => void;
-  createdCreds: { email: string; password: string; inviteSent?: boolean; needsConsoleAuth?: boolean } | null;
+  onCreated: (creds: { email: string; password: string; inviteSent?: boolean; inviteError?: string | null; needsConsoleAuth?: boolean }) => void;
+  createdCreds: { email: string; password: string; inviteSent?: boolean; inviteError?: string | null; needsConsoleAuth?: boolean } | null;
   onResetPassword: (u: Profile) => void;
 }) {
   const qc = useQueryClient();
@@ -194,6 +228,7 @@ function UserDialog({ open, onClose, editUser, onCreated, createdCreds, onResetP
         qc.invalidateQueries({ queryKey: ["profiles"] });
 
         let inviteSent = false;
+        let inviteError: string | null = null;
         try {
           await sendUserInviteEmail({
             email: result.email,
@@ -201,15 +236,17 @@ function UserDialog({ open, onClose, editUser, onCreated, createdCreds, onResetP
             tempPassword: result.password,
           });
           inviteSent = true;
-        } catch (inviteError) {
-          console.warn("Invite email failed", inviteError);
-          toast.error((inviteError as Error).message);
+        } catch (inviteErr) {
+          inviteError = (inviteErr as Error).message;
+          console.warn("Invite email failed", inviteErr);
+          toast.error(inviteError, { duration: 8000 });
         }
 
         onCreated({
           email: result.email,
           password: result.password,
           inviteSent,
+          inviteError,
           needsConsoleAuth: result.needsConsoleAuth,
         });
         setName(""); setTitle(""); setEmail(""); setRole("staff"); setPassword("");
@@ -232,6 +269,12 @@ function UserDialog({ open, onClose, editUser, onCreated, createdCreds, onResetP
                 ? "Invite saved. Complete these steps so the user can sign in."
                 : "User created. Share these login details with them (invite email could not be sent)."}
           </p>
+          {createdCreds.inviteError && (
+            <div className="glass p-3 rounded-xl border border-red-400/30 text-xs text-red-200/90 leading-relaxed">
+              <p className="font-medium text-red-100 mb-1">Invite email could not be sent</p>
+              <p className="text-red-200/80">{createdCreds.inviteError}</p>
+            </div>
+          )}
           {createdCreds.inviteSent && (
             <p className="text-white/45 text-xs">
               You can still copy the credentials below if they need a backup.

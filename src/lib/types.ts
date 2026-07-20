@@ -7,7 +7,7 @@ export type ProjectStatus = "active" | "on_hold" | "archived";
 export type EventType = "company" | "personal";
 export type TimeLogSource = "timer" | "auto" | "manual" | "agent";
 export type AppCategory = "work" | "neutral" | "distraction";
-export type NotificationType = "task_assigned" | "comment_on_task" | "daily_summary";
+export type NotificationType = "task_assigned" | "comment_on_task" | "task_mention";
 
 export interface Profile {
   id: string;
@@ -55,6 +55,17 @@ export interface Task {
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface TaskAttachment {
+  id: string;
+  task_id: string;
+  user_id: string;
+  file_name: string;
+  file_type: string;
+  file_url: string;
+  size_bytes: number;
+  created_at: string;
 }
 
 export interface Comment {
