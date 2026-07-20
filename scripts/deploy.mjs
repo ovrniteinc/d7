@@ -89,6 +89,30 @@ function runCommit(label, message) {
   return true;
 }
 
+function runFirebaseDeploy(label) {
+  log("step", label);
+
+  const deployArgs = "deploy --only firestore:rules,firestore:indexes";
+  const result =
+    process.platform === "win32"
+      ? spawnSync(`firebase ${deployArgs}`, { stdio: "inherit", shell: true })
+      : spawnSync("firebase", deployArgs.split(" "), { stdio: "inherit", shell: false });
+
+  if (result.error) {
+    log("err", `${label} — ${result.error.message}`);
+    log("warn", "Install Firebase CLI: npm install -g firebase-tools");
+    process.exit(1);
+  }
+
+  if (result.status !== 0) {
+    log("err", `${label} — failed (exit ${result.status ?? 1})`);
+    process.exit(result.status || 1);
+  }
+
+  log("ok", `${label} — success`);
+  return true;
+}
+
 function capture(command, commandArgs) {
   return spawnSync(command, commandArgs, {
     encoding: "utf8",
@@ -182,11 +206,7 @@ if (!flags.firebaseOnly) {
 if (!flags.gitOnly) {
   step += 1;
   console.log(`\n\x1b[90m── Step ${step}/${totalSteps} ──\x1b[0m`);
-  run(
-    "Deploy Firestore rules & indexes",
-    "firebase",
-    ["deploy", "--only", "firestore:rules,firestore:indexes"],
-  );
+  runFirebaseDeploy("Deploy Firestore rules & indexes");
 }
 
 console.log("");
