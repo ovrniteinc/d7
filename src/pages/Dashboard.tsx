@@ -53,7 +53,7 @@ export default function Dashboard() {
     queryKey: ["my-tasks", profile?.id],
     queryFn: async () => {
       const rows = await listDocs<Task>(COL.tasks, {
-        where: [["assignee_id", "==", profile!.id]],
+        where: [["assignee_ids", "array-contains", profile!.id]],
       });
       return rows
         .filter((t) => t.status !== "done")

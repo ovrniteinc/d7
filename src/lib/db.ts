@@ -67,6 +67,24 @@ function normalizeDoc<T extends DocumentData>(id: string, data: DocumentData): T
       out[key] = key === "activity_date" ? String(out[key]).slice(0, 10) : toIso(out[key]);
     }
   }
+  if ("project_id" in out && "status" in out) {
+    if (!Array.isArray(out.assignee_ids)) {
+      out.assignee_ids =
+        typeof out.assignee_id === "string" && out.assignee_id ? [out.assignee_id] : [];
+    } else {
+      out.assignee_ids = [...new Set((out.assignee_ids as string[]).filter(Boolean))];
+    }
+    delete out.assignee_id;
+  }
+  if ("author_id" in out && "x" in out && "y" in out) {
+    if (typeof out.board_id !== "string" || !out.board_id) out.board_id = "root";
+    if (typeof out.type !== "string") out.type = "note";
+    if (typeof out.url !== "string") out.url = null;
+    if (typeof out.image_url !== "string") out.image_url = null;
+    if (!Array.isArray(out.todos)) out.todos = [];
+    if (typeof out.width !== "number") out.width = out.type === "image" ? 280 : 220;
+    if (typeof out.height !== "number") out.height = out.type === "todo" ? 200 : out.type === "image" ? 200 : 160;
+  }
   return out as T;
 }
 

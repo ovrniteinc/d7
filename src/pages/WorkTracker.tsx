@@ -9,6 +9,7 @@ import { useUIStore } from "../lib/ui-store";
 import { GlassPanel, LiftedTile, StatTile, EmptyState, SectionLabel } from "../components/ui";
 import { fmtClock, fmtHours, fmtRelative } from "../lib/format";
 import { rollupTimeLog } from "../lib/functions";
+import { taskHasAssignee } from "../lib/tasks";
 import { startSessionUsageTracker, stopSessionUsageTracker } from "../lib/session-usage-tracker";
 import type { TimeLog, Task, Project, Profile } from "../lib/types";
 
@@ -64,7 +65,7 @@ export default function WorkTracker() {
   const userMap: Record<string, Profile> = {};
   (users || []).forEach((u) => { userMap[u.id] = u; });
 
-  const availableTasks = isAdmin ? (tasks || []) : (tasks || []).filter((t) => t.assignee_id === profile?.id);
+  const availableTasks = isAdmin ? (tasks || []) : (tasks || []).filter((t) => profile && taskHasAssignee(t, profile.id));
 
   useEffect(() => {
     const reconcile = async () => {

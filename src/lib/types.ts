@@ -46,7 +46,7 @@ export interface Task {
   project_id: string;
   title: string;
   description: string;
-  assignee_id: string | null;
+  assignee_ids: string[];
   status: TaskStatus;
   priority: Priority;
   progress: number;
@@ -89,14 +89,29 @@ export interface CalendarEvent {
   created_at: string;
 }
 
+export type BoardItemType = "note" | "link" | "todo" | "board" | "image";
+
+export interface BoardTodoItem {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
 export interface StickyNote {
   id: string;
+  board_id: string;
   author_id: string;
+  type: BoardItemType;
   body: string;
   color: ShadeKey;
+  url: string | null;
+  image_url: string | null;
+  todos: BoardTodoItem[];
   x: number;
   y: number;
   z: number;
+  width: number;
+  height: number;
   created_at: string;
   updated_at: string;
 }

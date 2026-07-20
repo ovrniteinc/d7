@@ -1,20 +1,11 @@
 {
   "indexes": [
     {
-      "collectionGroup": "tasks",
+      "collectionGroup": "sticky_notes",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "assignee_id", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "due_date", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "tasks",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "assignee_id", "order": "ASCENDING" },
-        { "fieldPath": "due_date", "order": "ASCENDING" }
+        { "fieldPath": "board_id", "order": "ASCENDING" },
+        { "fieldPath": "z", "order": "DESCENDING" }
       ]
     },
     {

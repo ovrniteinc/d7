@@ -11,11 +11,13 @@ import { Plus } from "lucide-react";
 import { COL, createDoc, getDocById, listDocs, patchDoc } from "../lib/db";
 import { useAuth } from "../lib/auth";
 import { useUIStore } from "../lib/ui-store";
-import { Modal, EmptyState, Avatar, MonoBadge, ShadeStripe } from "../components/ui";
+import { Modal, EmptyState, MonoBadge, ShadeStripe } from "../components/ui";
 import { STATUS_LABELS, PRIORITY_DOTS, DEFAULT_KANBAN_COLUMNS } from "../lib/constants";
 import { taskSchema } from "../lib/schemas";
 import { logActivity } from "../lib/functions";
-import { notifyTaskAssigned } from "../lib/notifications";
+import { notifyTaskAssignedMany } from "../lib/notifications";
+import { taskHasAssignee } from "../lib/tasks";
+import { AssigneeAvatars, AssigneeMultiSelect } from "../components/AssigneePicker";
 import { fmtDate } from "../lib/format";
 import type { Task, Project, Profile, TaskStatus, Priority, ShadeKey } from "../lib/types";
 
@@ -74,7 +76,7 @@ export default function Tasks() {
       list = list.map((t) => (t.id === id ? { ...t, ...patch } : t));
     }
     if (projectFilter) list = list.filter((t) => t.project_id === projectFilter);
-    if (personFilter && isAdmin) list = list.filter((t) => t.assignee_id === personFilter);
+    if (personFilter && isAdmin) list = list.filter((t) => taskHasAssignee(t, personFilter));
     return list;
   }, [tasks, pendingMoves, projectFilter, personFilter, isAdmin]);
 
@@ -201,7 +203,7 @@ export default function Tasks() {
           </div>
           <DragOverlay>
             {activeTask ? (
-              <TaskCard task={activeTask} project={projectMap[activeTask.project_id]} assignee={activeTask.assignee_id ? userMap[activeTask.assignee_id] : null} commentCount={commentCounts?.[activeTask.id] || 0} onClick={() => {}} />
+              <TaskCard task={activeTask} project={projectMap[activeTask.project_id]} assignees={activeTask.assignee_ids.map((id) => userMap[id]).filter(Boolean)} commentCount={commentCounts?.[activeTask.id] || 0} onClick={() => {}} />
             ) : null}
           </DragOverlay>
         </DndContext>
@@ -235,7 +237,7 @@ function KanbanColumn({ col, tasks, activeId, projectMap, userMap, commentCounts
             task={t}
             hidden={t.id === activeId}
             project={projectMap[t.project_id]}
-            assignee={t.assignee_id ? userMap[t.assignee_id] : null}
+            assignees={t.assignee_ids.map((id) => userMap[id]).filter(Boolean)}
             commentCount={commentCounts[t.id] || 0}
             onClick={() => onOpen(t.id)}
           />
@@ -246,10 +248,10 @@ function KanbanColumn({ col, tasks, activeId, projectMap, userMap, commentCounts
   );
 }
 
-function TaskCard({ task, project, assignee, commentCount, hidden, onClick }: {
+function TaskCard({ task, project, assignees, commentCount, hidden, onClick }: {
   task: Task;
   project?: Project;
-  assignee?: Profile | null;
+  assignees: Profile[];
   commentCount: number;
   hidden?: boolean;
   onClick: () => void;
@@ -279,7 +281,7 @@ function TaskCard({ task, project, assignee, commentCount, hidden, onClick }: {
               {task.due_date && <span className="text-[10px] text-white/40">{fmtDate(task.due_date)}</span>}
               {commentCount > 0 && <span className="text-[10px] text-white/30">{commentCount}</span>}
             </div>
-            {assignee && <Avatar name={assignee.name} url={assignee.avatar_url} size={20} />}
+            <AssigneeAvatars assignees={assignees} size={20} />
           </div>
         </div>
       </div>
@@ -293,7 +295,7 @@ function TaskDialog({ open, onClose, projects, users }: { open: boolean; onClose
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [projectId, setProjectId] = useState("");
-  const [assigneeId, setAssigneeId] = useState("");
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [priority, setPriority] = useState<Priority>("medium");
   const [status, setStatus] = useState<TaskStatus>("backlog");
   const [dueDate, setDueDate] = useState("");
@@ -302,7 +304,7 @@ function TaskDialog({ open, onClose, projects, users }: { open: boolean; onClose
   const submit = async () => {
     const parsed = taskSchema.safeParse({
       title, description, project_id: projectId,
-      assignee_id: assigneeId || null, priority, status, due_date: dueDate || null,
+      assignee_ids: assigneeIds, priority, status, due_date: dueDate || null,
     });
     if (!parsed.success) { toast.error(parsed.error.issues[0].message); return; }
     if (!profile) {
@@ -313,14 +315,15 @@ function TaskDialog({ open, onClose, projects, users }: { open: boolean; onClose
     try {
       const data = await createDoc<Task>(COL.tasks, {
         title, description, project_id: projectId,
-        assignee_id: assigneeId || null, priority, status,
+        assignee_ids: assigneeIds, priority, status,
         due_date: dueDate || null, created_by: profile.id,
         position: Date.now(), progress: 0,
       });
       logActivity("task.create", "task", data.id, { title });
-      if (assigneeId && assigneeId !== profile.id) {
-        await notifyTaskAssigned({
-          recipientId: assigneeId,
+      const notifyIds = assigneeIds.filter((id) => id !== profile.id);
+      if (notifyIds.length) {
+        await notifyTaskAssignedMany({
+          recipientIds: notifyIds,
           actorId: profile.id,
           actorName: profile.name || profile.email,
           taskId: data.id,
@@ -329,7 +332,7 @@ function TaskDialog({ open, onClose, projects, users }: { open: boolean; onClose
       }
       qc.invalidateQueries({ queryKey: ["tasks"] });
       toast.success("Task created");
-      setTitle(""); setDescription(""); setProjectId(""); setAssigneeId(""); setPriority("medium"); setStatus("backlog"); setDueDate("");
+      setTitle(""); setDescription(""); setProjectId(""); setAssigneeIds([]); setPriority("medium"); setStatus("backlog"); setDueDate("");
       onClose();
     } catch (e) {
       toast.error((e as Error).message);
@@ -357,12 +360,9 @@ function TaskDialog({ open, onClose, projects, users }: { open: boolean; onClose
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
-          <div>
-            <label className="label">Assignee</label>
-            <select className="input" value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
-              <option value="">Unassigned</option>
-              {users.map((u) => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}
-            </select>
+          <div className="col-span-2">
+            <label className="label">Assignees</label>
+            <AssigneeMultiSelect users={users} value={assigneeIds} onChange={setAssigneeIds} />
           </div>
           <div>
             <label className="label">Priority</label>

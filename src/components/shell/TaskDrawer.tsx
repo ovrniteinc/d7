@@ -10,7 +10,9 @@ import type { Task, Comment, Profile, Project, TimeLog, Priority, TaskStatus } f
 import { Avatar, MonoBadge, StatusDot } from "../ui";
 import { fmtRelative, fmtClock, fmtHours, fmtDate } from "../../lib/format";
 import { logActivity, rollupTimeLog } from "../../lib/functions";
-import { notifyTaskAssigned, notifyTaskComment } from "../../lib/notifications";
+import { notifyTaskAssignedMany, notifyTaskCommentAssignees } from "../../lib/notifications";
+import { newAssigneeIds } from "../../lib/tasks";
+import { AssigneeList, AssigneeMultiSelect } from "../AssigneePicker";
 
 export default function TaskDrawer() {
   const { profile, isAdmin } = useAuth();
@@ -24,7 +26,7 @@ export default function TaskDrawer() {
   const [editMode, setEditMode] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editDesc, setEditDesc] = useState("");
-  const [editAssignee, setEditAssignee] = useState("");
+  const [editAssigneeIds, setEditAssigneeIds] = useState<string[]>([]);
   const [editPriority, setEditPriority] = useState<Priority>("medium");
   const [editDue, setEditDue] = useState("");
   const [editStatus, setEditStatus] = useState<TaskStatus>("backlog");
@@ -49,14 +51,15 @@ export default function TaskDrawer() {
     enabled: !!task?.project_id,
   });
 
-  const { data: assignee } = useQuery<Profile | null>({
-    queryKey: ["profile", task?.assignee_id],
-    queryFn: async () => {
-      if (!task?.assignee_id) return null;
-      return getDocById<Profile>(COL.profiles, task.assignee_id);
-    },
-    enabled: !!task?.assignee_id,
+  const { data: allUsers } = useQuery<Profile[]>({
+    queryKey: ["profiles"],
+    queryFn: () => listDocs<Profile>(COL.profiles, { orderBy: [["name", "asc"]] }),
+    enabled: !!selectedTaskId,
   });
+
+  const assignees = (task?.assignee_ids || [])
+    .map((id) => allUsers?.find((u) => u.id === id))
+    .filter(Boolean) as Profile[];
 
   const { data: comments } = useQuery<Comment[]>({
     queryKey: ["comments", selectedTaskId],
@@ -89,17 +92,11 @@ export default function TaskDrawer() {
     enabled: !!selectedTaskId,
   });
 
-  const { data: allUsers } = useQuery<Profile[]>({
-    queryKey: ["profiles"],
-    queryFn: () => listDocs<Profile>(COL.profiles, { orderBy: [["name", "asc"]] }),
-    enabled: isAdmin && !!selectedTaskId,
-  });
-
   useEffect(() => {
     if (task) {
       setEditTitle(task.title);
       setEditDesc(task.description);
-      setEditAssignee(task.assignee_id || "");
+      setEditAssigneeIds(task.assignee_ids || []);
       setEditPriority(task.priority);
       setEditDue(task.due_date || "");
       setEditStatus(task.status);
@@ -151,15 +148,18 @@ export default function TaskDrawer() {
       qc.invalidateQueries({ queryKey: ["comments", selectedTaskId] });
       const body = commentBody.trim();
       setCommentBody("");
-      if (task?.assignee_id && profile && task.assignee_id !== profile.id && body) {
-        await notifyTaskComment({
-          recipientId: task.assignee_id,
-          actorId: profile.id,
-          actorName: profile.name || profile.email,
-          taskId: task.id,
-          taskTitle: task.title,
-          preview: body.length > 120 ? `${body.slice(0, 117)}…` : body,
-        }).catch(() => {});
+      if (task?.assignee_ids?.length && profile && body) {
+        const recipients = task.assignee_ids.filter((id) => id !== profile.id);
+        if (recipients.length) {
+          await notifyTaskCommentAssignees({
+            assigneeIds: recipients,
+            actorId: profile.id,
+            actorName: profile.name || profile.email,
+            taskId: task.id,
+            taskTitle: task.title,
+            preview: body.length > 120 ? `${body.slice(0, 117)}…` : body,
+          }).catch(() => {});
+        }
       }
     },
     onError: (e) => toast.error((e as Error).message),
@@ -206,31 +206,29 @@ export default function TaskDrawer() {
   };
 
   const saveEdit = async () => {
-    const previousAssignee = task?.assignee_id || null;
-    const nextAssignee = editAssignee || null;
+    const previousAssignees = task?.assignee_ids || [];
+    const nextAssignees = editAssigneeIds;
     updateTask.mutate({
       title: editTitle,
       description: editDesc,
-      assignee_id: nextAssignee,
+      assignee_ids: nextAssignees,
       priority: editPriority,
       due_date: editDue || null,
       status: editStatus,
     });
     setEditMode(false);
     logActivity("task.update", "task", selectedTaskId || undefined);
-    if (
-      profile &&
-      nextAssignee &&
-      nextAssignee !== previousAssignee &&
-      nextAssignee !== profile.id
-    ) {
-      await notifyTaskAssigned({
-        recipientId: nextAssignee,
-        actorId: profile.id,
-        actorName: profile.name || profile.email,
-        taskId: selectedTaskId!,
-        taskTitle: editTitle || task?.title || "Task",
-      }).catch(() => {});
+    if (profile) {
+      const added = newAssigneeIds(previousAssignees, nextAssignees).filter((id) => id !== profile.id);
+      if (added.length) {
+        await notifyTaskAssignedMany({
+          recipientIds: added,
+          actorId: profile.id,
+          actorName: profile.name || profile.email,
+          taskId: selectedTaskId!,
+          taskTitle: editTitle || task?.title || "Task",
+        }).catch(() => {});
+      }
     }
   };
 
@@ -267,19 +265,13 @@ export default function TaskDrawer() {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="label">Assignee</p>
+            <div className="col-span-2">
+              <p className="label">Assignees</p>
               {editMode && isAdmin ? (
-                <select className="input" value={editAssignee} onChange={(e) => setEditAssignee(e.target.value)}>
-                  <option value="">Unassigned</option>
-                  {allUsers?.map((u) => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}
-                </select>
-              ) : assignee ? (
-                <div className="flex items-center gap-2">
-                  <Avatar name={assignee.name} url={assignee.avatar_url} size={24} />
-                  <span className="text-sm text-white/75">{assignee.name}</span>
-                </div>
-              ) : <span className="text-sm text-white/40">Unassigned</span>}
+                <AssigneeMultiSelect users={allUsers || []} value={editAssigneeIds} onChange={setEditAssigneeIds} />
+              ) : (
+                <AssigneeList assignees={assignees} />
+              )}
             </div>
             <div>
               <p className="label">Priority</p>

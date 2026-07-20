@@ -27,7 +27,7 @@ export const taskSchema = z.object({
   title: z.string().min(2, "Title too short").max(140, "Title too long"),
   description: z.string().max(2000).optional().default(""),
   project_id: documentId,
-  assignee_id: nullableDocumentId,
+  assignee_ids: z.array(documentId).default([]),
   priority: z.enum(["low", "medium", "high", "urgent"]),
   status: z.enum(["backlog", "todo", "in_progress", "review", "done"]),
   due_date: z.string().nullable(),

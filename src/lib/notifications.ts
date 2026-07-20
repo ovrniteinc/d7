@@ -106,6 +106,50 @@ export async function notifyUser(input: {
   return doc.id;
 }
 
+export async function notifyTaskAssignedMany(input: {
+  recipientIds: string[];
+  actorId: string;
+  actorName: string;
+  taskId: string;
+  taskTitle: string;
+}) {
+  const unique = [...new Set(input.recipientIds.filter(Boolean))];
+  await Promise.all(
+    unique.map((recipientId) =>
+      notifyTaskAssigned({
+        recipientId,
+        actorId: input.actorId,
+        actorName: input.actorName,
+        taskId: input.taskId,
+        taskTitle: input.taskTitle,
+      }).catch(() => {}),
+    ),
+  );
+}
+
+export async function notifyTaskCommentAssignees(input: {
+  assigneeIds: string[];
+  actorId: string;
+  actorName: string;
+  taskId: string;
+  taskTitle: string;
+  preview: string;
+}) {
+  const unique = [...new Set(input.assigneeIds.filter(Boolean))];
+  await Promise.all(
+    unique.map((recipientId) =>
+      notifyTaskComment({
+        recipientId,
+        actorId: input.actorId,
+        actorName: input.actorName,
+        taskId: input.taskId,
+        taskTitle: input.taskTitle,
+        preview: input.preview,
+      }).catch(() => {}),
+    ),
+  );
+}
+
 export async function notifyTaskAssigned(input: {
   recipientId: string;
   actorId: string;

@@ -12,7 +12,7 @@ const TITLES: Record<string, { title: string; sub: string }> = {
   "/projects": { title: "Projects", sub: "Workspace initiatives" },
   "/tasks": { title: "Tasks", sub: "Kanban board" },
   "/calendar": { title: "Calendar", sub: "Events & deadlines" },
-  "/blackboard": { title: "Blackboard", sub: "Shared live canvas" },
+  "/blackboard": { title: "Blackboard", sub: "Visual workspace — notes, links, to-dos & boards" },
   "/tracker": { title: "Work Tracker", sub: "Focus & time" },
   "/productivity": { title: "Productivity", sub: "Focus analytics" },
   "/reports": { title: "Reports & Logs", sub: "Audit & time records" },
